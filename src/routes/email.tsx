@@ -250,6 +250,7 @@ function EmailStudio() {
 
               {email && (
                 <>
+                  <OfflineModeNotice reason={email.degraded} />
                   <article className="card-soft overflow-hidden">
                     <div className="border-b border-border bg-secondary/60 px-5 py-4">
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
