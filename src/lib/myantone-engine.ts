@@ -472,7 +472,7 @@ export async function generateEmail(input: {
   tone: Tone;
   length: EmailLength;
 }): Promise<GeneratedEmail> {
-  const ai = await askJSON<{
+  const { data: ai, error: aiError } = await askJSON<{
     intent: string;
     situation: string;
     details?: string[];
