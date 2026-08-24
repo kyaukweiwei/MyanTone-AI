@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { UnderstandingCard } from "@/components/UnderstandingCard";
 import { AIActionBar, type BarAction } from "@/components/AIActionBar";
+import { OfflineModeNotice } from "@/components/OfflineModeNotice";
 import {
   AUDIENCES,
   CONTEXTS,
