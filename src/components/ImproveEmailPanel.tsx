@@ -2,7 +2,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { improveText, type ImproveAction } from "@/lib/myantone-engine";
+import {
+  improveTextResult,
+  type AIFallbackReason,
+  type ImproveAction,
+} from "@/lib/myantone-engine";
+import { OfflineModeNotice } from "@/components/OfflineModeNotice";
 import { ArrowRight, Copy, Sparkles } from "lucide-react";
 
 const ACTIONS: { id: ImproveAction; label: string }[] = [
