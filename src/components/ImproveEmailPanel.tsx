@@ -19,6 +19,7 @@ const ACTIONS: { id: ImproveAction; label: string }[] = [
 export function ImproveEmailPanel() {
   const [original, setOriginal] = useState("");
   const [improved, setImproved] = useState("");
+  const [degraded, setDegraded] = useState<AIFallbackReason | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   async function run(a: ImproveAction) {
@@ -27,7 +28,9 @@ export function ImproveEmailPanel() {
       return;
     }
     setBusy(true);
-    setImproved(await improveText(original, a));
+    const r = await improveTextResult(original, a);
+    setImproved(r.text);
+    setDegraded(r.degraded);
     setBusy(false);
   }
 
