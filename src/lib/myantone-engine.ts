@@ -542,7 +542,11 @@ Return JSON exactly:
     placeholders,
     understanding,
   };
-  return { ...email, health: evaluateEmail({ subject, body, understanding }) };
+  return {
+    ...email,
+    health: evaluateEmail({ subject, body, understanding }),
+    ...(ai ? {} : { degraded: aiError ?? "bad_output" }),
+  };
 }
 
 export type ImproveAction =
