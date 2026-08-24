@@ -10,7 +10,7 @@ const MESSAGES: Record<AIFallbackReason, string> = {
   bad_output: "The AI model returned an unusable response. Showing basic offline results.",
 };
 
-export function OfflineModeNotice({ reason }: { reason?: AIFallbackReason }) {
+export function OfflineModeNotice({ reason }: { reason?: AIFallbackReason | undefined }) {
   if (!reason) return null;
   return (
     <div
