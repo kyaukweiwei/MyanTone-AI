@@ -371,6 +371,7 @@ Every variant must faithfully carry the user's meaning and their specific reason
     understanding,
     variants: TONES.map((t) => ({ tone: t.id, text: rule.body[t.id] })),
     pipeline: PIPELINE_STAGES,
+    degraded: aiError ?? "bad_output",
   };
 }
 
