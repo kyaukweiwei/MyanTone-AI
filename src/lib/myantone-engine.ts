@@ -55,7 +55,7 @@ export type Understanding = {
   tone: Tone;
   details: string[];
   missing: string[];
-  attachment?: string;
+  attachment?: string | undefined;
   languageMix: string;
 };
 
