@@ -387,6 +387,8 @@ export type GeneratedEmail = {
   placeholders: string[];
   understanding: Understanding;
   health: EmailHealth;
+  /** Set when the real AI model was unavailable and offline results are shown. */
+  degraded?: AIFallbackReason;
 };
 
 export type EmailHealth = {
