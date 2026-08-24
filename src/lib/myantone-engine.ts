@@ -7,6 +7,25 @@
  * requires no changes in the components.
  */
 
+import { aiComplete } from "./ai.functions";
+
+async function askJSON<T>(system: string, user: string): Promise<T | null> {
+  try {
+    const r = await aiComplete({ data: { system, user } });
+    if (!r.ok || !r.text) return null;
+    const cleaned = r.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "");
+    return JSON.parse(cleaned) as T;
+  } catch {
+    return null;
+  }
+}
+
+const BASE_SYSTEM =
+  "You are MyanTone AI, a Myanmar-first communication assistant. Users write in Burmese (Myanmar Unicode), English, or a mix. " +
+  "You understand what they actually MEAN — including colloquial speech, slang, and mixed script — and express it in natural, idiomatic English " +
+  "that a native speaker would really send. Never translate word-for-word. Never invent facts that were not in the input. " +
+  "Keep the user's own specifics (times, reasons, names). Always reply with valid JSON only, no markdown fences.";
+
 export type Tone = "simple" | "polite" | "friendly" | "professional" | "formal";
 export const TONES: { id: Tone; label: string }[] = [
   { id: "simple", label: "Simple" },
@@ -282,9 +301,64 @@ export async function translate(
   text: string,
   opts: { audience?: string; tone?: Tone; context?: string } = {},
 ): Promise<TranslationResult> {
+  const ai = await askJSON<{
+    intent: string;
+    audience: string;
+    situation: string;
+    details?: string[];
+    missing?: string[];
+    variants: Record<Tone, string>;
+  }>(
+    BASE_SYSTEM,
+    `Translate/rewrite the user's message into natural English in five tones.
+
+User message:
+"""${text}"""
+
+Context: ${opts.context ?? "General"}
+Intended recipient: ${opts.audience && opts.audience !== "Auto-detect" ? opts.audience : "detect it yourself"}
+
+Return JSON exactly in this shape:
+{
+  "intent": "short English description of what the user wants to communicate",
+  "audience": "Manager | HR | Lecturer | Professor | Client | Customer | Colleague | Recruiter | Friend | Other",
+  "situation": "one short sentence describing the situation",
+  "details": ["concrete facts detected in the message"],
+  "missing": ["useful details the reader would expect but that are missing (empty array if none)"],
+  "variants": {
+    "simple": "short, direct, everyday English (1 sentence if possible)",
+    "polite": "warm and considerate",
+    "friendly": "casual and human, like messaging a colleague you like",
+    "professional": "workplace-appropriate, clear and respectful",
+    "formal": "formal register, full sentences, no contractions"
+  }
+}
+Every variant must faithfully carry the user's meaning and their specific reason/time.`,
+  );
+
+  if (ai?.variants) {
+    return {
+      understanding: {
+        intent: ai.intent,
+        audience:
+          opts.audience && opts.audience !== "Auto-detect" ? opts.audience : (ai.audience ?? "Colleague"),
+        situation: ai.situation,
+        tone: opts.tone ?? "professional",
+        details: ai.details ?? [],
+        missing: ai.missing ?? [],
+        attachment: detectAttachment(text),
+        languageMix: detectLanguageMix(text),
+      },
+      variants: TONES.map((t) => ({ tone: t.id, text: ai.variants[t.id] ?? "" })).filter(
+        (v) => v.text,
+      ),
+      pipeline: PIPELINE_STAGES,
+    };
+  }
+
   const understanding = await analyze(text, opts);
   const rule = pickRule(text);
-  await wait(400);
+  await wait(200);
   return {
     understanding,
     variants: TONES.map((t) => ({ tone: t.id, text: rule.body[t.id] })),
@@ -385,24 +459,68 @@ export async function generateEmail(input: {
   tone: Tone;
   length: EmailLength;
 }): Promise<GeneratedEmail> {
-  const understanding = await analyze(input.text, {
-    audience: input.audience,
-    tone: input.tone,
-  });
+  const ai = await askJSON<{
+    intent: string;
+    situation: string;
+    details?: string[];
+    missing?: string[];
+    subjects: { professional: string; simple: string; formal: string };
+    body: string;
+  }>(
+    BASE_SYSTEM,
+    `Write a complete English email from the user's note.
+
+User note:
+"""${input.text}"""
+
+Recipient: ${input.audience || "Recipient"}
+Purpose: ${input.purpose || "detect it yourself"}
+Tone: ${input.tone}
+Length: ${input.length} (short = 1 short paragraph, standard = 2-3 paragraphs, detailed = 3-4 paragraphs)
+
+Rules:
+- Body only: no greeting line and no sign-off, those are added separately.
+- Use square-bracket placeholders like [Meeting Date] ONLY where a real detail is genuinely unknown.
+- Do not invent reasons, dates or names the user did not give.
+
+Return JSON exactly:
+{
+  "intent": "...",
+  "situation": "...",
+  "details": ["..."],
+  "missing": ["..."],
+  "subjects": { "professional": "...", "simple": "...", "formal": "..." },
+  "body": "paragraphs separated by \\n\\n"
+}`,
+  );
+
   const rule = pickRule(input.text);
-  await wait(500);
+  const understanding: Understanding = ai
+    ? {
+        intent: ai.intent,
+        audience: input.audience || "Recipient",
+        situation: ai.situation,
+        tone: input.tone,
+        details: ai.details ?? [],
+        missing: ai.missing ?? [],
+        attachment: detectAttachment(input.text),
+        languageMix: detectLanguageMix(input.text),
+      }
+    : await analyze(input.text, { audience: input.audience, tone: input.tone });
+
   const { greeting, closing } = toneWrap(input.tone, input.audience || "Recipient");
-  const body = lengthAdjust(rule.emailBody, input.length);
-  const subject = rule.subject.professional;
+  const body = ai?.body ? ai.body : lengthAdjust(rule.emailBody, input.length);
+  const subjects = ai?.subjects ?? rule.subject;
+  const subject = subjects.professional;
   const placeholders = Array.from(
     new Set((body + greeting + closing).match(/\[[^\]]+\]/g) ?? []),
   );
   const email = {
     subject,
     subjectOptions: [
-      { label: "Professional", value: rule.subject.professional },
-      { label: "Simple", value: rule.subject.simple },
-      { label: "Formal", value: rule.subject.formal },
+      { label: "Professional", value: subjects.professional },
+      { label: "Simple", value: subjects.simple },
+      { label: "Formal", value: subjects.formal },
     ],
     to: `[${input.audience || "Recipient"}'s Name]`,
     greeting,
@@ -425,8 +543,26 @@ export type ImproveAction =
   | "persuasive"
   | "grammar";
 
+const IMPROVE_BRIEF: Record<ImproveAction, string> = {
+  improve: "Improve the wording so it reads naturally to a native English speaker.",
+  shorten: "Make it noticeably shorter while keeping every important point.",
+  polite: "Make it warmer and more polite.",
+  professional: "Make it professional and workplace-appropriate.",
+  friendly: "Make it friendlier and more casual.",
+  formal: "Make it formal: full sentences, no contractions.",
+  clearer: "Make it clearer and easier to follow.",
+  persuasive: "Make it more persuasive and compelling.",
+  grammar: "Fix grammar, spelling and punctuation only; keep the wording.",
+};
+
 export async function improveText(text: string, action: ImproveAction): Promise<string> {
-  await wait(450);
+  const ai = await askJSON<{ text: string }>(
+    BASE_SYSTEM,
+    `${IMPROVE_BRIEF[action]}\n\nKeep the same meaning and all facts. Do not add placeholders that were not there.\n\nText:\n"""${text}"""\n\nReturn JSON: { "text": "the rewritten English text" }`,
+  );
+  if (ai?.text) return ai.text.trim();
+
+  await wait(250);
   const t = text.trim();
   switch (action) {
     case "shorten": {
