@@ -90,6 +90,8 @@ export type TranslationResult = {
   understanding: Understanding;
   variants: { tone: Tone; text: string }[];
   pipeline: string[];
+  /** Set when the real AI model was unavailable and offline results are shown. */
+  degraded?: AIFallbackReason;
 };
 
 export const PIPELINE_STAGES = [
