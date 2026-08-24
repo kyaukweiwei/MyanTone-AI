@@ -568,13 +568,23 @@ const IMPROVE_BRIEF: Record<ImproveAction, string> = {
   grammar: "Fix grammar, spelling and punctuation only; keep the wording.",
 };
 
-export async function improveText(text: string, action: ImproveAction): Promise<string> {
-  const ai = await askJSON<{ text: string }>(
+export async function improveTextResult(
+  text: string,
+  action: ImproveAction,
+): Promise<{ text: string; degraded?: AIFallbackReason }> {
+  const { data: ai, error: aiError } = await askJSON<{ text: string }>(
     BASE_SYSTEM,
     `${IMPROVE_BRIEF[action]}\n\nKeep the same meaning and all facts. Do not add placeholders that were not there.\n\nText:\n"""${text}"""\n\nReturn JSON: { "text": "the rewritten English text" }`,
   );
-  if (ai?.text) return ai.text.trim();
+  if (ai?.text) return { text: ai.text.trim() };
+  return { text: await offlineImprove(text, action), degraded: aiError ?? "bad_output" };
+}
 
+export async function improveText(text: string, action: ImproveAction): Promise<string> {
+  return (await improveTextResult(text, action)).text;
+}
+
+async function offlineImprove(text: string, action: ImproveAction): Promise<string> {
   await wait(250);
   const t = text.trim();
   switch (action) {
