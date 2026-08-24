@@ -309,7 +309,7 @@ export async function translate(
   text: string,
   opts: { audience?: string; tone?: Tone; context?: string } = {},
 ): Promise<TranslationResult> {
-  const ai = await askJSON<{
+  const { data: ai, error: aiError } = await askJSON<{
     intent: string;
     audience: string;
     situation: string;
