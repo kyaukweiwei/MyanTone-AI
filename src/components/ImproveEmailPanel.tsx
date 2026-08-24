@@ -62,6 +62,8 @@ export function ImproveEmailPanel() {
         </div>
       </section>
 
+      <OfflineModeNotice reason={degraded} />
+
       {improved && (
         <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-center">
           <article className="card-soft p-5">
