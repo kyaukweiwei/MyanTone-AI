@@ -169,7 +169,7 @@ Best regards,
           </div>
 
           <div className="mt-8 grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid content-start gap-4 sm:grid-cols-3">
               {[
                 { label: "Translations this month", value: "48" },
                 { label: "Emails created", value: "23" },
