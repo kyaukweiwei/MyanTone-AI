@@ -9,16 +9,24 @@
 
 import { aiComplete } from "./ai.functions";
 
-async function askJSON<T>(system: string, user: string): Promise<T | null> {
+/** Reason the app fell back to the offline rule engine. */
+export type AIFallbackReason = "missing_key" | "rate_limit" | "credits" | "upstream" | "bad_output";
+
+async function askJSON<T>(
+  system: string,
+  user: string,
+): Promise<{ data: T | null; error: AIFallbackReason | null }> {
   try {
     const r = await aiComplete({ data: { system, user } });
-    if (!r.ok || !r.text) return null;
+    if (!r.ok) return { data: null, error: (r.error as AIFallbackReason) || "upstream" };
+    if (!r.text) return { data: null, error: "bad_output" };
     const cleaned = r.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "");
-    return JSON.parse(cleaned) as T;
+    return { data: JSON.parse(cleaned) as T, error: null };
   } catch {
-    return null;
+    return { data: null, error: "bad_output" };
   }
 }
+
 
 const BASE_SYSTEM =
   "You are MyanTone AI, a Myanmar-first communication assistant. Users write in Burmese (Myanmar Unicode), English, or a mix. " +
