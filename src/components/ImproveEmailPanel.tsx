@@ -2,7 +2,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { improveText, type ImproveAction } from "@/lib/myantone-engine";
+import {
+  improveTextResult,
+  type AIFallbackReason,
+  type ImproveAction,
+} from "@/lib/myantone-engine";
+import { OfflineModeNotice } from "@/components/OfflineModeNotice";
 import { ArrowRight, Copy, Sparkles } from "lucide-react";
 
 const ACTIONS: { id: ImproveAction; label: string }[] = [
@@ -19,6 +24,7 @@ const ACTIONS: { id: ImproveAction; label: string }[] = [
 export function ImproveEmailPanel() {
   const [original, setOriginal] = useState("");
   const [improved, setImproved] = useState("");
+  const [degraded, setDegraded] = useState<AIFallbackReason | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   async function run(a: ImproveAction) {
@@ -27,7 +33,9 @@ export function ImproveEmailPanel() {
       return;
     }
     setBusy(true);
-    setImproved(await improveText(original, a));
+    const r = await improveTextResult(original, a);
+    setImproved(r.text);
+    setDegraded(r.degraded);
     setBusy(false);
   }
 
@@ -53,6 +61,8 @@ export function ImproveEmailPanel() {
           ))}
         </div>
       </section>
+
+      <OfflineModeNotice reason={degraded} />
 
       {improved && (
         <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-center">

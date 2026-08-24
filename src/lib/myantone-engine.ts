@@ -9,16 +9,24 @@
 
 import { aiComplete } from "./ai.functions";
 
-async function askJSON<T>(system: string, user: string): Promise<T | null> {
+/** Reason the app fell back to the offline rule engine. */
+export type AIFallbackReason = "missing_key" | "rate_limit" | "credits" | "upstream" | "bad_output";
+
+async function askJSON<T>(
+  system: string,
+  user: string,
+): Promise<{ data: T | null; error: AIFallbackReason | null }> {
   try {
     const r = await aiComplete({ data: { system, user } });
-    if (!r.ok || !r.text) return null;
+    if (!r.ok) return { data: null, error: (r.error as AIFallbackReason) || "upstream" };
+    if (!r.text) return { data: null, error: "bad_output" };
     const cleaned = r.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "");
-    return JSON.parse(cleaned) as T;
+    return { data: JSON.parse(cleaned) as T, error: null };
   } catch {
-    return null;
+    return { data: null, error: "bad_output" };
   }
 }
+
 
 const BASE_SYSTEM =
   "You are MyanTone AI, a Myanmar-first communication assistant. Users write in Burmese (Myanmar Unicode), English, or a mix. " +
@@ -82,6 +90,8 @@ export type TranslationResult = {
   understanding: Understanding;
   variants: { tone: Tone; text: string }[];
   pipeline: string[];
+  /** Set when the real AI model was unavailable and offline results are shown. */
+  degraded?: AIFallbackReason;
 };
 
 export const PIPELINE_STAGES = [
@@ -301,7 +311,7 @@ export async function translate(
   text: string,
   opts: { audience?: string; tone?: Tone; context?: string } = {},
 ): Promise<TranslationResult> {
-  const ai = await askJSON<{
+  const { data: ai, error: aiError } = await askJSON<{
     intent: string;
     audience: string;
     situation: string;
@@ -363,6 +373,7 @@ Every variant must faithfully carry the user's meaning and their specific reason
     understanding,
     variants: TONES.map((t) => ({ tone: t.id, text: rule.body[t.id] })),
     pipeline: PIPELINE_STAGES,
+    degraded: aiError ?? "bad_output",
   };
 }
 
@@ -376,6 +387,8 @@ export type GeneratedEmail = {
   placeholders: string[];
   understanding: Understanding;
   health: EmailHealth;
+  /** Set when the real AI model was unavailable and offline results are shown. */
+  degraded?: AIFallbackReason;
 };
 
 export type EmailHealth = {
@@ -459,7 +472,7 @@ export async function generateEmail(input: {
   tone: Tone;
   length: EmailLength;
 }): Promise<GeneratedEmail> {
-  const ai = await askJSON<{
+  const { data: ai, error: aiError } = await askJSON<{
     intent: string;
     situation: string;
     details?: string[];
@@ -529,7 +542,11 @@ Return JSON exactly:
     placeholders,
     understanding,
   };
-  return { ...email, health: evaluateEmail({ subject, body, understanding }) };
+  return {
+    ...email,
+    health: evaluateEmail({ subject, body, understanding }),
+    ...(ai ? {} : { degraded: aiError ?? "bad_output" }),
+  };
 }
 
 export type ImproveAction =
@@ -555,13 +572,23 @@ const IMPROVE_BRIEF: Record<ImproveAction, string> = {
   grammar: "Fix grammar, spelling and punctuation only; keep the wording.",
 };
 
-export async function improveText(text: string, action: ImproveAction): Promise<string> {
-  const ai = await askJSON<{ text: string }>(
+export async function improveTextResult(
+  text: string,
+  action: ImproveAction,
+): Promise<{ text: string; degraded?: AIFallbackReason }> {
+  const { data: ai, error: aiError } = await askJSON<{ text: string }>(
     BASE_SYSTEM,
     `${IMPROVE_BRIEF[action]}\n\nKeep the same meaning and all facts. Do not add placeholders that were not there.\n\nText:\n"""${text}"""\n\nReturn JSON: { "text": "the rewritten English text" }`,
   );
-  if (ai?.text) return ai.text.trim();
+  if (ai?.text) return { text: ai.text.trim() };
+  return { text: await offlineImprove(text, action), degraded: aiError ?? "bad_output" };
+}
 
+export async function improveText(text: string, action: ImproveAction): Promise<string> {
+  return (await improveTextResult(text, action)).text;
+}
+
+async function offlineImprove(text: string, action: ImproveAction): Promise<string> {
   await wait(250);
   const t = text.trim();
   switch (action) {

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { UnderstandingCard } from "@/components/UnderstandingCard";
 import { AIActionBar, type BarAction } from "@/components/AIActionBar";
+import { OfflineModeNotice } from "@/components/OfflineModeNotice";
 import {
   AUDIENCES,
   CONTEXTS,
@@ -225,7 +226,8 @@ function TranslatePage() {
 
       {result && (
         <section className="mt-8" aria-label="Translation results">
-          <h2 className="mb-4 text-lg">Your message, in five tones</h2>
+          <OfflineModeNotice reason={result.degraded} />
+          <h2 className="mb-4 mt-4 text-lg">Your message, in five tones</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             {result.variants.map((v) => (
               <article
