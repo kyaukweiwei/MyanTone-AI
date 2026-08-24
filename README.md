@@ -1242,3 +1242,22 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Running locally (GitHub clone)
+
+The Myanmar → English quality comes from the Lovable AI Gateway. On Lovable the
+`LOVABLE_API_KEY` is injected automatically; a local clone has no key, so the app
+falls back to a small offline rule engine and every result looks generic
+("I wanted to let you know about this."). An amber notice in the UI tells you
+when that is happening.
+
+To get real AI results locally:
+
+```bash
+cp .env.example .env      # then paste your LOVABLE_API_KEY into .env
+bun install
+bun run dev
+```
+
+Vite loads `.env` automatically and the key is only ever read inside server
+functions — it is never sent to the browser. `.env` is gitignored; never commit it.
