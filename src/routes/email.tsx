@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UnderstandingCard } from "@/components/UnderstandingCard";
 import { EmailHealthCard } from "@/components/EmailHealthCard";
 import { ImproveEmailPanel } from "@/components/ImproveEmailPanel";
+import { OfflineModeNotice } from "@/components/OfflineModeNotice";
 import { TEMPLATES } from "@/lib/templates";
 import {
   AUDIENCES,
