@@ -1,0 +1,5 @@
+{"instruction":"Convert the Myanmar message into natural English. Use a simple tone.","input":"ဒီနေ့ meeting မတက်နိုင်ဘူးလို့ အလုပ်ကလူကို ပြောချင်တယ်။","output":"I can't attend today's meeting."}
+{"instruction":"Convert the Myanmar message into natural English. Use a polite tone.","input":"ဒီနေ့ meeting မတက်နိုင်ဘူးလို့ အလုပ်ကလူကို ပြောချင်တယ်။","output":"I'm sorry, but I won't be able to attend today's meeting."}
+{"instruction":"Convert the Myanmar message into natural English. Use a friendly tone.","input":"ဒီနေ့ meeting မတက်နိုင်ဘူးလို့ အလုပ်ကလူကို ပြောချင်တယ်။","output":"Sorry, I can't make it to today's meeting."}
+{"instruction":"Convert the Myanmar message into natural English. Use a professional tone.","input":"ဒီနေ့ meeting မတက်နိုင်ဘူးလို့ အလုပ်ကလူကို ပြောချင်တယ်။","output":"I apologize, but I will be unable to attend today's meeting."}
+{"instruction":"Convert the Myanmar message into natural English. Use a formal tone.","input":"ဒီနေ့ meeting မတက်နိုင်ဘူးလို့ အလုပ်ကလူကို ပြောချင်တယ်။","output":"I regret to inform you that I will be unable to attend today's meeting."}

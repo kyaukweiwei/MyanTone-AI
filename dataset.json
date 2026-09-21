@@ -1,0 +1,10 @@
+[
+  {
+    "instruction": "Identify the tone rules for the following word: ကောင်း",
+    "output": "The word 'ကောင်း' uses the high/falling tone indicated by the visarga (ရှေ့ဆီးဗိန္ဒု) mark."
+  },
+  {
+    "instruction": "Convert the following phrase into its phonetic breakdown: မင်္ဂလာပါ",
+    "output": "mɪŋɡəlaːbaː"
+  }
+]
