@@ -290,7 +290,7 @@ import {
 } from "@/components/ui/select";
 import { UnderstandingCard } from "@/components/UnderstandingCard";
 import { AIActionBar, type BarAction } from "@/components/AIActionBar";
-import { OfflineModeNotice } from "@/components/OfflineModeNotice";
+// import { OfflineModeNotice } from "@/components/OfflineModeNotice";
 import {
   AUDIENCES,
   CONTEXTS,
@@ -634,7 +634,7 @@ function TranslatePage() {
           className="mt-8"
           aria-label="Translation result"
         >
-          <OfflineModeNotice reason={result.degraded} />
+          {/* <OfflineModeNotice reason={result.degraded} /> */}
 
           <h2 className="mb-4 mt-4 text-lg">
             Your translation
