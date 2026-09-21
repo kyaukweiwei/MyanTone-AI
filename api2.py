@@ -1,3 +1,2545 @@
+# from fastapi import FastAPI
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel, Field
+# from transformers import AutoTokenizer, AutoModelForCausalLM
+# import torch
+# import re
+
+
+# # ============================================================
+# # MyanTone AI
+# # Myanmar → Natural English
+# # ============================================================
+
+# MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+# # Visible API/build version. Change this whenever backend behavior changes.
+# API_VERSION = "2.2.0-complete-context-debug"
+# API_BUILD = "2026-09-21-long-context"
+
+
+# # ============================================================
+# # Load Qwen model
+# # ============================================================
+
+# print("Loading MyanTone AI model...")
+# print(f"Model: {MODEL_NAME}")
+
+# tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+# model = AutoModelForCausalLM.from_pretrained(
+#     MODEL_NAME,
+#     dtype=torch.float32,
+# )
+
+# model.to("cpu")
+# model.eval()
+
+# print("Model loaded successfully.")
+# print("Device: CPU")
+
+
+# # ============================================================
+# # FastAPI
+# # ============================================================
+
+# app = FastAPI(
+#     title="MyanTone AI API",
+#     description="Myanmar to natural English translation with tone control.",
+#     version=API_VERSION,
+# )
+
+
+# # ============================================================
+# # CORS
+# # ============================================================
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=[
+#         "http://localhost:5173",
+#         "http://127.0.0.1:5173",
+#         "http://localhost:8080",
+#         "http://127.0.0.1:8080",
+#     ],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+
+# # ============================================================
+# # Tones
+# # ============================================================
+
+# TONES = [
+#     "simple",
+#     "polite",
+#     "friendly",
+#     "professional",
+#     "formal",
+# ]
+
+
+# # ============================================================
+# # Request / Response Models
+# # ============================================================
+
+# class TranslateRequest(BaseModel):
+#     text: str
+#     tone: str = "professional"
+#     context: str = "general"
+#     audience: str = "auto"
+
+
+# class TranslateResponse(BaseModel):
+#     translation: str
+#     translations: dict[str, str]
+#     api_version: str = API_VERSION
+#     debug: dict = Field(default_factory=dict)
+#     # AI Understanding is returned by the API so the frontend can display
+#     # the complete meaning that was detected, instead of only the final intent.
+#     language: str = ""
+#     intent: str = ""
+#     audience_detected: str = ""
+#     situation: str = ""
+#     reason: str = ""
+#     main_action: str = ""
+#     cause_chain: str = ""
+#     recommended_tone: str = ""
+
+
+# # ============================================================
+# # 100 TRAINING / REFERENCE SENTENCES
+# #
+# # These examples are used as a deterministic reference layer.
+# # They also provide training-style examples for the project.
+# # ============================================================
+
+# TRAINING_EXAMPLES = [
+
+#     # ========================================================
+#     # WORK / OFFICE - 1 to 25
+#     # ========================================================
+
+#     {
+#         "input": "ဒီနေ့ အလုပ်နောက်ကျမယ်။",
+#         "simple": "I'll be late for work today.",
+#         "polite": "I'm sorry, but I'll be late for work today.",
+#         "friendly": "I'll be a little late for work today.",
+#         "professional": "I'll be slightly late for work today.",
+#         "formal": "I will be slightly delayed in arriving at work today.",
+#     },
+
+#     {
+#         "input": "ကားပိတ်နေလို့ အလုပ်နောက်ကျမယ်။",
+#         "simple": "I'll be late for work because of traffic.",
+#         "polite": "I'm sorry, but I'll be late for work because of the traffic.",
+#         "friendly": "The traffic is bad, so I'll be a little late for work.",
+#         "professional": "I'll be slightly late for work due to traffic.",
+#         "formal": "I will be delayed in arriving at work due to traffic congestion.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ အလုပ်မလာနိုင်ဘူး။",
+#         "simple": "I can't come to work today.",
+#         "polite": "I'm sorry, but I can't come to work today.",
+#         "friendly": "I won't be able to make it to work today.",
+#         "professional": "I will be unable to come to work today.",
+#         "formal": "I regret to inform you that I will be unable to report to work today.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ အလုပ်မလာတော့ဘူး။",
+#         "simple": "I won't come to work today.",
+#         "polite": "I'm sorry, but I won't be coming to work today.",
+#         "friendly": "I won't be coming to work today.",
+#         "professional": "I will not be coming to work today.",
+#         "formal": "I would like to inform you that I will not be reporting to work today.",
+#     },
+
+#     {
+#         "input": "မနက်ဖြန် အလုပ်သွားမယ်။",
+#         "simple": "I'll go to work tomorrow.",
+#         "polite": "I'll be going to work tomorrow.",
+#         "friendly": "I'll be at work tomorrow.",
+#         "professional": "I will be at work tomorrow.",
+#         "formal": "I will report to work tomorrow.",
+#     },
+
+#     {
+#         "input": "အခု အလုပ်လုပ်နေတယ်။",
+#         "simple": "I'm working right now.",
+#         "polite": "I'm currently working on it.",
+#         "friendly": "I'm working on it right now.",
+#         "professional": "I'm currently working on the task.",
+#         "formal": "I am currently engaged in the assigned work.",
+#     },
+
+#     {
+#         "input": "အခုထိ အလုပ်မပြီးသေးဘူး။",
+#         "simple": "I haven't finished the work yet.",
+#         "polite": "I'm sorry, but I haven't finished the work yet.",
+#         "friendly": "I haven't finished it yet.",
+#         "professional": "The work is not completed yet.",
+#         "formal": "The assigned work has not yet been completed.",
+#     },
+
+#     {
+#         "input": "အလုပ်ပြီးသွားပြီ။",
+#         "simple": "The work is finished.",
+#         "polite": "I've finished the work.",
+#         "friendly": "It's all done.",
+#         "professional": "The work has been completed.",
+#         "formal": "The assigned work has been successfully completed.",
+#     },
+
+#     {
+#         "input": "အလုပ်နည်းနည်းနောက်ကျမယ်။",
+#         "simple": "I'll be a little late for work.",
+#         "polite": "I'm sorry, but I'll be a little late for work.",
+#         "friendly": "I'll be a bit late for work.",
+#         "professional": "I'll be slightly late for work.",
+#         "formal": "I will be slightly delayed in arriving at work.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ leave ယူချင်တယ်။",
+#         "simple": "I want to take leave today.",
+#         "polite": "I'd like to take leave today, if possible.",
+#         "friendly": "I'd like to take the day off today.",
+#         "professional": "I would like to request leave for today.",
+#         "formal": "I would like to formally request leave for today.",
+#     },
+
+#     {
+#         "input": "မနက်ဖြန် leave ယူမယ်။",
+#         "simple": "I'll take leave tomorrow.",
+#         "polite": "I'd like to take leave tomorrow.",
+#         "friendly": "I'll be taking the day off tomorrow.",
+#         "professional": "I will be taking leave tomorrow.",
+#         "formal": "I would like to inform you that I will be taking leave tomorrow.",
+#     },
+
+#     {
+#         "input": "ဒီ task ကို လုပ်နေတယ်။",
+#         "simple": "I'm working on this task.",
+#         "polite": "I'm currently working on this task.",
+#         "friendly": "I'm working on this task now.",
+#         "professional": "I'm currently working on this task.",
+#         "formal": "I am currently working on the assigned task.",
+#     },
+
+#     {
+#         "input": "ဒီ task ပြီးရင် ပို့ပေးမယ်။",
+#         "simple": "I'll send it when I finish this task.",
+#         "polite": "I'll send it once I finish this task.",
+#         "friendly": "I'll send it over when I'm done with this task.",
+#         "professional": "I will send it once this task is completed.",
+#         "formal": "I will forward it upon completion of this task.",
+#     },
+
+#     {
+#         "input": "အလုပ်ကိစ္စနည်းနည်းများနေတယ်။",
+#         "simple": "I have a lot of work right now.",
+#         "polite": "I have quite a bit of work to handle right now.",
+#         "friendly": "I've got a lot on my plate right now.",
+#         "professional": "I am currently handling a heavy workload.",
+#         "formal": "I am currently managing a substantial workload.",
+#     },
+
+#     {
+#         "input": "ဒီအလုပ်ကို အရင်လုပ်လိုက်မယ်။",
+#         "simple": "I'll do this work first.",
+#         "polite": "I'll take care of this first.",
+#         "friendly": "I'll get this done first.",
+#         "professional": "I'll prioritize this task first.",
+#         "formal": "I will prioritize this task before proceeding with the others.",
+#     },
+
+#     {
+#         "input": "အလုပ်အခြေအနေကို update ပေးမယ်။",
+#         "simple": "I'll give you an update on the work.",
+#         "polite": "I'll give you an update on the work shortly.",
+#         "friendly": "I'll keep you updated on the work.",
+#         "professional": "I will provide an update on the work.",
+#         "formal": "I will provide you with an update regarding the progress of the work.",
+#     },
+
+#     {
+#         "input": "ဒီအလုပ်ကို ဘယ်အချိန်ပြီးရမလဲ။",
+#         "simple": "When do I need to finish this work?",
+#         "polite": "When would you like me to finish this work?",
+#         "friendly": "When do you need this done?",
+#         "professional": "What is the deadline for this task?",
+#         "formal": "Could you please confirm the deadline for this task?",
+#     },
+
+#     {
+#         "input": "ဒီနေ့အတွင်းပြီးအောင်လုပ်မယ်။",
+#         "simple": "I'll finish it today.",
+#         "polite": "I'll make sure to finish it today.",
+#         "friendly": "I'll get it done today.",
+#         "professional": "I will complete it by the end of today.",
+#         "formal": "I will ensure that the task is completed by the end of today.",
+#     },
+
+#     {
+#         "input": "ဒီကိစ္စကို manager နဲ့ ပြောပြီးပြီ။",
+#         "simple": "I already talked to the manager about this.",
+#         "polite": "I've already discussed this with the manager.",
+#         "friendly": "I already talked to the manager about it.",
+#         "professional": "I have already discussed this matter with the manager.",
+#         "formal": "I have already discussed this matter with the manager.",
+#     },
+
+#     {
+#         "input": "manager ကို ပြောပေးပါ။",
+#         "simple": "Please tell the manager.",
+#         "polite": "Could you please let the manager know?",
+#         "friendly": "Can you let the manager know?",
+#         "professional": "Please inform the manager.",
+#         "formal": "I would appreciate it if you could inform the manager.",
+#     },
+
+#     {
+#         "input": "ဒီ file ကို ပြန်ပို့ပေးပါ။",
+#         "simple": "Please send this file again.",
+#         "polite": "Could you please resend this file?",
+#         "friendly": "Can you send this file again?",
+#         "professional": "Please resend the file.",
+#         "formal": "Could you kindly resend the requested file?",
+#     },
+
+#     {
+#         "input": "file ကို attach လုပ်ထားတယ်။",
+#         "simple": "I attached the file.",
+#         "polite": "I've attached the file for you.",
+#         "friendly": "I've attached the file here.",
+#         "professional": "The file has been attached for your review.",
+#         "formal": "Please find the requested file attached.",
+#     },
+
+#     {
+#         "input": "ဒီကိစ္စကို နောက်မှပြောမယ်။",
+#         "simple": "I'll talk about this later.",
+#         "polite": "I'll discuss this with you later.",
+#         "friendly": "Let's talk about this later.",
+#         "professional": "I'll discuss this matter with you later.",
+#         "formal": "I would like to discuss this matter at a later time.",
+#     },
+
+#     {
+#         "input": "အလုပ်မှာ ပြဿနာတစ်ခုရှိတယ်။",
+#         "simple": "There's a problem at work.",
+#         "polite": "There's an issue at work that I'd like to discuss.",
+#         "friendly": "There's a small problem at work.",
+#         "professional": "There is an issue that needs to be addressed at work.",
+#         "formal": "There is an issue at work that requires attention.",
+#     },
+
+#     {
+#         "input": "ဒီကိစ္စကို ကူညီပေးပါ။",
+#         "simple": "Please help me with this.",
+#         "polite": "Could you please help me with this?",
+#         "friendly": "Can you help me with this?",
+#         "professional": "Could you please assist me with this matter?",
+#         "formal": "I would appreciate your assistance with this matter.",
+#     },
+
+
+#     # ========================================================
+#     # UNIVERSITY / SCHOOL - 26 to 45
+#     # ========================================================
+
+#     {
+#         "input": "နေမကောင်းလို့ ဒီနေ့ ကျောင်းမတက်နိုင်ဘူး။",
+#         "simple": "I'm sick, so I can't attend school today.",
+#         "polite": "I'm sorry, but I'm not feeling well and can't attend school today.",
+#         "friendly": "I'm not feeling well, so I can't make it to school today.",
+#         "professional": "I am unwell and will be unable to attend school today.",
+#         "formal": "I regret to inform you that I am unwell and unable to attend school today.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ lecture နောက်ကျမယ်။",
+#         "simple": "I'll be late for the lecture today.",
+#         "polite": "I'm sorry, but I'll be late for today's lecture.",
+#         "friendly": "I'll be a little late for the lecture today.",
+#         "professional": "I will be slightly late for today's lecture.",
+#         "formal": "I will be delayed in attending today's lecture.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ class မတက်နိုင်ဘူး။",
+#         "simple": "I can't attend class today.",
+#         "polite": "I'm sorry, but I can't attend class today.",
+#         "friendly": "I won't be able to make it to class today.",
+#         "professional": "I will be unable to attend today's class.",
+#         "formal": "I regret to inform you that I will be unable to attend today's class.",
+#     },
+
+#     {
+#         "input": "assignment မပြီးသေးဘူး။",
+#         "simple": "I haven't finished the assignment yet.",
+#         "polite": "I'm sorry, but I haven't finished the assignment yet.",
+#         "friendly": "I haven't finished the assignment yet.",
+#         "professional": "The assignment is not completed yet.",
+#         "formal": "The assignment has not yet been completed.",
+#     },
+
+#     {
+#         "input": "assignment မပြီးသေးလို့ deadline တိုးပေးပါ။",
+#         "simple": "Please extend the deadline because I haven't finished the assignment.",
+#         "polite": "Could you please extend the deadline because I haven't finished the assignment yet?",
+#         "friendly": "Could you give me a little more time to finish the assignment?",
+#         "professional": "Could you please extend the deadline as I have not yet completed the assignment?",
+#         "formal": "I would respectfully request an extension of the assignment deadline.",
+#     },
+
+#     {
+#         "input": "မနက်ဖြန် assignment submit လုပ်မယ်။",
+#         "simple": "I'll submit the assignment tomorrow.",
+#         "polite": "I will submit the assignment tomorrow.",
+#         "friendly": "I'll submit the assignment tomorrow.",
+#         "professional": "I will submit the assignment by tomorrow.",
+#         "formal": "I will submit the completed assignment tomorrow.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ exam ရှိတယ်။",
+#         "simple": "I have an exam today.",
+#         "polite": "I have an exam today.",
+#         "friendly": "I've got an exam today.",
+#         "professional": "I have an examination scheduled for today.",
+#         "formal": "I am scheduled to take an examination today.",
+#     },
+
+#     {
+#         "input": "exam အတွက် စာလေ့လာနေတယ်။",
+#         "simple": "I'm studying for the exam.",
+#         "polite": "I'm currently studying for the exam.",
+#         "friendly": "I'm studying for my exam right now.",
+#         "professional": "I am currently preparing for the examination.",
+#         "formal": "I am currently preparing for the upcoming examination.",
+#     },
+
+#     {
+#         "input": "project အတွက် team member တွေနဲ့ ဆွေးနွေးနေတယ်။",
+#         "simple": "I'm discussing the project with my team members.",
+#         "polite": "I'm currently discussing the project with my team members.",
+#         "friendly": "I'm talking about the project with my team.",
+#         "professional": "I am discussing the project with the team.",
+#         "formal": "I am currently coordinating with my team members regarding the project.",
+#     },
+
+#     {
+#         "input": "presentation မနက်ဖြန်လုပ်ရမယ်။",
+#         "simple": "I have to give a presentation tomorrow.",
+#         "polite": "I have to give a presentation tomorrow.",
+#         "friendly": "I've got a presentation tomorrow.",
+#         "professional": "I am scheduled to give a presentation tomorrow.",
+#         "formal": "I am scheduled to deliver a presentation tomorrow.",
+#     },
+
+#     {
+#         "input": "presentation အတွက် ပြင်ဆင်နေတယ်။",
+#         "simple": "I'm preparing for the presentation.",
+#         "polite": "I'm currently preparing for the presentation.",
+#         "friendly": "I'm getting ready for the presentation.",
+#         "professional": "I am currently preparing the presentation.",
+#         "formal": "I am currently making preparations for the presentation.",
+#     },
+
+#     {
+#         "input": "ဆရာကို မေးချင်တာရှိတယ်။",
+#         "simple": "I want to ask the teacher something.",
+#         "polite": "I'd like to ask the teacher something.",
+#         "friendly": "I want to ask the teacher something.",
+#         "professional": "I would like to ask the instructor a question.",
+#         "formal": "I would like to ask the instructor for clarification regarding a matter.",
+#     },
+
+#     {
+#         "input": "ဒီ lesson ကို နားမလည်ဘူး။",
+#         "simple": "I don't understand this lesson.",
+#         "polite": "I'm having trouble understanding this lesson.",
+#         "friendly": "I don't really understand this lesson.",
+#         "professional": "I am having difficulty understanding this lesson.",
+#         "formal": "I am having difficulty understanding the material covered in this lesson.",
+#     },
+
+#     {
+#         "input": "နောက်တစ်ခါ ပြန်ရှင်းပြပေးပါ။",
+#         "simple": "Please explain it again.",
+#         "polite": "Could you please explain it again?",
+#         "friendly": "Can you explain it one more time?",
+#         "professional": "Could you please explain the concept again?",
+#         "formal": "I would appreciate it if you could explain the concept once again.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ university မသွားနိုင်ဘူး။",
+#         "simple": "I can't go to university today.",
+#         "polite": "I'm sorry, but I can't go to university today.",
+#         "friendly": "I won't be able to make it to university today.",
+#         "professional": "I will be unable to attend university today.",
+#         "formal": "I regret to inform you that I will be unable to attend university today.",
+#     },
+
+#     {
+#         "input": "group project အတွက် meeting လုပ်မယ်။",
+#         "simple": "We'll have a meeting for the group project.",
+#         "polite": "We'll have a meeting to discuss the group project.",
+#         "friendly": "We're going to have a meeting for the group project.",
+#         "professional": "We will hold a meeting to discuss the group project.",
+#         "formal": "We will conduct a meeting regarding the group project.",
+#     },
+
+#     {
+#         "input": "project ကို မနက်ဖြန် submit လုပ်မယ်။",
+#         "simple": "I'll submit the project tomorrow.",
+#         "polite": "I'll submit the project tomorrow.",
+#         "friendly": "I'll get the project submitted tomorrow.",
+#         "professional": "I will submit the project by tomorrow.",
+#         "formal": "I will submit the completed project tomorrow.",
+#     },
+
+#     {
+#         "input": "စာမေးပွဲ result ဘယ်တော့ထွက်မလဲ။",
+#         "simple": "When will the exam results come out?",
+#         "polite": "Could you please let me know when the exam results will be released?",
+#         "friendly": "Do you know when the exam results will be out?",
+#         "professional": "Could you please confirm when the examination results will be released?",
+#         "formal": "I would appreciate information regarding the release date of the examination results.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ class ရှိမရှိ မသေချာဘူး။",
+#         "simple": "I'm not sure if there's class today.",
+#         "polite": "I'm not sure whether we have class today.",
+#         "friendly": "I'm not sure if we have class today.",
+#         "professional": "I'm unsure whether today's class is scheduled.",
+#         "formal": "I would like to confirm whether a class is scheduled for today.",
+#     },
+
+#     {
+#         "input": "notes တွေ ပို့ပေးပါ။",
+#         "simple": "Please send me the notes.",
+#         "polite": "Could you please send me the notes?",
+#         "friendly": "Can you send me the notes?",
+#         "professional": "Could you please share the lecture notes with me?",
+#         "formal": "I would appreciate it if you could provide me with the lecture notes.",
+#     },
+
+
+#     # ========================================================
+#     # MEETINGS - 46 to 55
+#     # ========================================================
+
+#     {
+#         "input": "ဒီနေ့ meeting မတက်နိုင်ဘူး။",
+#         "simple": "I can't attend today's meeting.",
+#         "polite": "I'm sorry, but I won't be able to attend today's meeting.",
+#         "friendly": "I won't be able to make it to today's meeting.",
+#         "professional": "I will be unable to attend today's meeting.",
+#         "formal": "I regret to inform you that I will be unable to attend today's meeting.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ meeting မတက်တော့ဘူး။",
+#         "simple": "I won't attend today's meeting.",
+#         "polite": "I'm sorry, but I won't be attending today's meeting.",
+#         "friendly": "I won't be joining today's meeting.",
+#         "professional": "I will not be attending today's meeting.",
+#         "formal": "I would like to inform you that I will not be attending today's meeting.",
+#     },
+
+#     {
+#         "input": "meeting ကို နောက်တစ်ချိန်ရွှေ့လို့ရမလား။",
+#         "simple": "Can we move the meeting to another time?",
+#         "polite": "Could we please move the meeting to another time?",
+#         "friendly": "Can we reschedule the meeting?",
+#         "professional": "Could we reschedule the meeting to a different time?",
+#         "formal": "Would it be possible to reschedule the meeting for another time?",
+#     },
+
+#     {
+#         "input": "meeting ဘယ်အချိန်စမလဲ။",
+#         "simple": "What time does the meeting start?",
+#         "polite": "Could you please let me know what time the meeting starts?",
+#         "friendly": "What time does the meeting start?",
+#         "professional": "Could you please confirm the meeting start time?",
+#         "formal": "I would appreciate confirmation of the scheduled meeting time.",
+#     },
+
+#     {
+#         "input": "meeting link ပို့ပေးပါ။",
+#         "simple": "Please send me the meeting link.",
+#         "polite": "Could you please send me the meeting link?",
+#         "friendly": "Can you send me the meeting link?",
+#         "professional": "Please share the meeting link with me.",
+#         "formal": "I would appreciate it if you could provide the meeting link.",
+#     },
+
+#     {
+#         "input": "meeting အတွက် ပြင်ဆင်နေတယ်။",
+#         "simple": "I'm preparing for the meeting.",
+#         "polite": "I'm currently preparing for the meeting.",
+#         "friendly": "I'm getting ready for the meeting.",
+#         "professional": "I am currently preparing for the meeting.",
+#         "formal": "I am currently making preparations for the scheduled meeting.",
+#     },
+
+#     {
+#         "input": "meeting ပြီးသွားပြီ။",
+#         "simple": "The meeting is over.",
+#         "polite": "The meeting has finished.",
+#         "friendly": "The meeting is done.",
+#         "professional": "The meeting has concluded.",
+#         "formal": "The meeting has officially concluded.",
+#     },
+
+#     {
+#         "input": "meeting notes ပို့ပေးမယ်။",
+#         "simple": "I'll send the meeting notes.",
+#         "polite": "I'll send the meeting notes shortly.",
+#         "friendly": "I'll send over the meeting notes.",
+#         "professional": "I will send the meeting notes shortly.",
+#         "formal": "I will distribute the meeting notes shortly.",
+#     },
+
+#     {
+#         "input": "meeting မှာ ဒီအကြောင်းပြောမယ်။",
+#         "simple": "I'll talk about this in the meeting.",
+#         "polite": "I'll discuss this in the meeting.",
+#         "friendly": "I'll bring this up in the meeting.",
+#         "professional": "I will discuss this matter during the meeting.",
+#         "formal": "I will raise this matter for discussion during the meeting.",
+#     },
+
+#     {
+#         "input": "meeting အတွက် agenda ပြင်ပြီးပြီ။",
+#         "simple": "I've prepared the meeting agenda.",
+#         "polite": "I've prepared the agenda for the meeting.",
+#         "friendly": "The meeting agenda is ready.",
+#         "professional": "The meeting agenda has been prepared.",
+#         "formal": "The agenda for the scheduled meeting has been prepared.",
+#     },
+
+
+#     # ========================================================
+#     # PROJECTS / ASSIGNMENTS - 56 to 70
+#     # ========================================================
+
+#     {
+#         "input": "မနက်ဖြန် project ကို submit လုပ်မယ်။",
+#         "simple": "I'll submit the project tomorrow.",
+#         "polite": "I will submit the project tomorrow.",
+#         "friendly": "I'll submit the project tomorrow.",
+#         "professional": "I will submit the project by tomorrow.",
+#         "formal": "I will submit the completed project tomorrow.",
+#     },
+
+#     {
+#         "input": "project မပြီးသေးဘူး။",
+#         "simple": "The project isn't finished yet.",
+#         "polite": "I'm sorry, but the project isn't finished yet.",
+#         "friendly": "The project isn't done yet.",
+#         "professional": "The project is still in progress.",
+#         "formal": "The project has not yet been completed.",
+#     },
+
+#     {
+#         "input": "project ကို ပြန်စစ်နေတယ်။",
+#         "simple": "I'm checking the project again.",
+#         "polite": "I'm reviewing the project again.",
+#         "friendly": "I'm going over the project again.",
+#         "professional": "I am currently reviewing the project.",
+#         "formal": "I am conducting a further review of the project.",
+#     },
+
+#     {
+#         "input": "project မှာ error တစ်ခုရှိတယ်။",
+#         "simple": "There's an error in the project.",
+#         "polite": "There's an error in the project that I need to fix.",
+#         "friendly": "There's a small error in the project.",
+#         "professional": "There is an error in the project that needs to be resolved.",
+#         "formal": "An error has been identified in the project and requires correction.",
+#     },
+
+#     {
+#         "input": "ဒီ error ကို fix လုပ်မယ်။",
+#         "simple": "I'll fix this error.",
+#         "polite": "I'll fix this error as soon as possible.",
+#         "friendly": "I'll fix this error.",
+#         "professional": "I will resolve this error.",
+#         "formal": "I will take the necessary steps to resolve this error.",
+#     },
+
+#     {
+#         "input": "project deadline နီးလာပြီ။",
+#         "simple": "The project deadline is getting close.",
+#         "polite": "The project deadline is approaching.",
+#         "friendly": "The project deadline is coming up soon.",
+#         "professional": "The project deadline is approaching.",
+#         "formal": "The project deadline is drawing near.",
+#     },
+
+#     {
+#         "input": "deadline တိုးပေးလို့ရမလား။",
+#         "simple": "Can you extend the deadline?",
+#         "polite": "Could you please extend the deadline?",
+#         "friendly": "Could we get a little more time?",
+#         "professional": "Would it be possible to extend the deadline?",
+#         "formal": "I would respectfully request an extension of the deadline.",
+#     },
+
+#     {
+#         "input": "ဒီ task ကို assign လုပ်ပေးထားတယ်။",
+#         "simple": "I've been assigned this task.",
+#         "polite": "I've been assigned this task.",
+#         "friendly": "I was assigned this task.",
+#         "professional": "This task has been assigned to me.",
+#         "formal": "I have been assigned responsibility for this task.",
+#     },
+
+#     {
+#         "input": "ဒီ task ကို ဒီနေ့ပြီးအောင်လုပ်မယ်။",
+#         "simple": "I'll finish this task today.",
+#         "polite": "I'll make sure to finish this task today.",
+#         "friendly": "I'll get this task done today.",
+#         "professional": "I will complete this task by the end of today.",
+#         "formal": "I will ensure that this task is completed by the end of today.",
+#     },
+
+#     {
+#         "input": "team နဲ့အတူ project လုပ်နေတယ်။",
+#         "simple": "I'm working on the project with my team.",
+#         "polite": "I'm currently working on the project with my team.",
+#         "friendly": "I'm working on the project with my team.",
+#         "professional": "I am collaborating with my team on the project.",
+#         "formal": "I am currently collaborating with my team members on the project.",
+#     },
+
+#     {
+#         "input": "project အကြောင်း update ပေးမယ်။",
+#         "simple": "I'll give you an update on the project.",
+#         "polite": "I'll provide you with an update on the project.",
+#         "friendly": "I'll keep you updated on the project.",
+#         "professional": "I will provide an update on the project's progress.",
+#         "formal": "I will provide a formal update regarding the project's progress.",
+#     },
+
+#     {
+#         "input": "project ကို အောင်မြင်အောင်လုပ်မယ်။",
+#         "simple": "I'll make the project successful.",
+#         "polite": "I'll do my best to make the project successful.",
+#         "friendly": "We'll do our best to make the project work.",
+#         "professional": "I will work to ensure the project's success.",
+#         "formal": "I will make every effort to ensure the successful completion of the project.",
+#     },
+
+#     {
+#         "input": "ဒီအပိုင်းကို ငါလုပ်မယ်။",
+#         "simple": "I'll do this part.",
+#         "polite": "I'll take care of this part.",
+#         "friendly": "I'll handle this part.",
+#         "professional": "I will take responsibility for this part.",
+#         "formal": "I will assume responsibility for this portion of the work.",
+#     },
+
+#     {
+#         "input": "အလုပ်ကို အပိုင်းခွဲပြီးလုပ်ကြမယ်။",
+#         "simple": "Let's divide the work.",
+#         "polite": "Let's divide the work among the team.",
+#         "friendly": "Let's split up the work.",
+#         "professional": "Let's divide the tasks among the team members.",
+#         "formal": "I suggest that we distribute the responsibilities among the team members.",
+#     },
+
+#     {
+#         "input": "ဒီ project အတွက် idea တစ်ခုရှိတယ်။",
+#         "simple": "I have an idea for this project.",
+#         "polite": "I have an idea that we could consider for this project.",
+#         "friendly": "I've got an idea for this project.",
+#         "professional": "I have a proposal for this project.",
+#         "formal": "I would like to propose an idea for consideration in this project.",
+#     },
+
+
+#     # ========================================================
+#     # CAREER / INTERVIEW - 71 to 80
+#     # ========================================================
+
+#     {
+#         "input": "ဒီ job ကို apply လုပ်ချင်တယ်။",
+#         "simple": "I want to apply for this job.",
+#         "polite": "I'd like to apply for this position.",
+#         "friendly": "I'd like to apply for this job.",
+#         "professional": "I would like to apply for this position.",
+#         "formal": "I would like to formally submit my application for this position.",
+#     },
+
+#     {
+#         "input": "CV ပြင်နေတယ်။",
+#         "simple": "I'm updating my CV.",
+#         "polite": "I'm currently updating my CV.",
+#         "friendly": "I'm working on my CV.",
+#         "professional": "I am currently updating my CV.",
+#         "formal": "I am currently revising my curriculum vitae.",
+#     },
+
+#     {
+#         "input": "interview အတွက် ပြင်ဆင်နေတယ်။",
+#         "simple": "I'm preparing for the interview.",
+#         "polite": "I'm currently preparing for the interview.",
+#         "friendly": "I'm getting ready for my interview.",
+#         "professional": "I am currently preparing for the interview.",
+#         "formal": "I am currently making preparations for the upcoming interview.",
+#     },
+
+#     {
+#         "input": "interview ဘယ်အချိန်ရှိလဲ။",
+#         "simple": "What time is the interview?",
+#         "polite": "Could you please let me know what time the interview is?",
+#         "friendly": "What time is the interview?",
+#         "professional": "Could you please confirm the interview time?",
+#         "formal": "I would appreciate confirmation of the scheduled interview time.",
+#     },
+
+#     {
+#         "input": "interview invitation ရလို့ ဝမ်းသာတယ်။",
+#         "simple": "I'm happy to receive the interview invitation.",
+#         "polite": "I'm very pleased to receive the interview invitation.",
+#         "friendly": "I'm really happy to get the interview invitation.",
+#         "professional": "I am pleased to receive the interview invitation.",
+#         "formal": "I sincerely appreciate the opportunity to be invited for an interview.",
+#     },
+
+#     {
+#         "input": "ဒီ internship ကို လျှောက်ချင်တယ်။",
+#         "simple": "I want to apply for this internship.",
+#         "polite": "I'd like to apply for this internship opportunity.",
+#         "friendly": "I'd love to apply for this internship.",
+#         "professional": "I would like to apply for this internship position.",
+#         "formal": "I would like to formally apply for this internship opportunity.",
+#     },
+
+#     {
+#         "input": "application result ဘယ်တော့သိရမလဲ။",
+#         "simple": "When will I know the application result?",
+#         "polite": "Could you please let me know when I can expect the application result?",
+#         "friendly": "Do you know when I'll hear back about my application?",
+#         "professional": "Could you please confirm when I can expect to receive the application result?",
+#         "formal": "I would appreciate information regarding the expected timeline for the application decision.",
+#     },
+
+#     {
+#         "input": "interview result ကို follow up လုပ်ချင်တယ်။",
+#         "simple": "I want to follow up on the interview result.",
+#         "polite": "I'd like to politely follow up regarding my interview result.",
+#         "friendly": "I just wanted to follow up about my interview.",
+#         "professional": "I would like to follow up regarding the outcome of my interview.",
+#         "formal": "I am writing to respectfully inquire about the outcome of my interview.",
+#     },
+
+#     {
+#         "input": "ဒီ position အတွက် ကျွန်တော်စိတ်ဝင်စားတယ်။",
+#         "simple": "I'm interested in this position.",
+#         "polite": "I'm very interested in this position.",
+#         "friendly": "I'm really interested in this role.",
+#         "professional": "I am highly interested in this position.",
+#         "formal": "I am particularly interested in the opportunity associated with this position.",
+#     },
+
+#     {
+#         "input": "အလုပ်အခွင့်အရေးအတွက် ကျေးဇူးတင်ပါတယ်။",
+#         "simple": "Thank you for the job opportunity.",
+#         "polite": "Thank you very much for the opportunity.",
+#         "friendly": "Thanks so much for the opportunity.",
+#         "professional": "Thank you for providing me with this opportunity.",
+#         "formal": "I sincerely appreciate the opportunity you have provided.",
+#     },
+
+
+#     # ========================================================
+#     # BUSINESS / CLIENT - 81 to 90
+#     # ========================================================
+
+#     {
+#         "input": "client ကို update ပေးမယ်။",
+#         "simple": "I'll give the client an update.",
+#         "polite": "I'll provide the client with an update.",
+#         "friendly": "I'll keep the client updated.",
+#         "professional": "I will provide the client with an update.",
+#         "formal": "I will provide the client with a formal update regarding the matter.",
+#     },
+
+#     {
+#         "input": "client က reply မပြန်သေးဘူး။",
+#         "simple": "The client hasn't replied yet.",
+#         "polite": "The client hasn't responded yet.",
+#         "friendly": "The client hasn't gotten back to us yet.",
+#         "professional": "The client has not responded yet.",
+#         "formal": "We have not yet received a response from the client.",
+#     },
+
+#     {
+#         "input": "client ကို email ပို့ပြီးပြီ။",
+#         "simple": "I've sent the email to the client.",
+#         "polite": "I've already sent the email to the client.",
+#         "friendly": "I already sent the client the email.",
+#         "professional": "The email has already been sent to the client.",
+#         "formal": "The requested email has been sent to the client.",
+#     },
+
+#     {
+#         "input": "document ကို client ဆီ ပို့ပေးမယ်။",
+#         "simple": "I'll send the document to the client.",
+#         "polite": "I'll send the document to the client shortly.",
+#         "friendly": "I'll send the document over to the client.",
+#         "professional": "I will send the document to the client.",
+#         "formal": "I will forward the requested document to the client.",
+#     },
+
+#     {
+#         "input": "ဒီ document ကို စစ်ပေးပါ။",
+#         "simple": "Please check this document.",
+#         "polite": "Could you please check this document?",
+#         "friendly": "Can you take a look at this document?",
+#         "professional": "Could you please review this document?",
+#         "formal": "I would appreciate it if you could review this document.",
+#     },
+
+#     {
+#         "input": "ဒီ proposal ကို ပြင်ပြီးပြီ။",
+#         "simple": "I've revised the proposal.",
+#         "polite": "I've revised the proposal as requested.",
+#         "friendly": "I've updated the proposal.",
+#         "professional": "I have revised the proposal accordingly.",
+#         "formal": "The proposal has been revised in accordance with the requested changes.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့ client နဲ့ call ရှိတယ်။",
+#         "simple": "I have a call with the client today.",
+#         "polite": "I have a call scheduled with the client today.",
+#         "friendly": "I've got a call with the client today.",
+#         "professional": "I have a client call scheduled for today.",
+#         "formal": "I am scheduled to participate in a call with the client today.",
+#     },
+
+#     {
+#         "input": "ဒီကိစ္စကို client နဲ့ ဆွေးနွေးမယ်။",
+#         "simple": "I'll discuss this with the client.",
+#         "polite": "I'll discuss this matter with the client.",
+#         "friendly": "I'll talk this over with the client.",
+#         "professional": "I will discuss this matter with the client.",
+#         "formal": "I will discuss this matter with the client and seek further clarification.",
+#     },
+
+#     {
+#         "input": "ဒီနေ့အတွင်း quotation ပို့မယ်။",
+#         "simple": "I'll send the quotation today.",
+#         "polite": "I'll send the quotation by the end of today.",
+#         "friendly": "I'll send over the quotation today.",
+#         "professional": "I will send the quotation by the end of today.",
+#         "formal": "I will provide the quotation by the end of today.",
+#     },
+
+#     {
+#         "input": "အချက်အလက်တွေ ထပ်လိုသေးတယ်။",
+#         "simple": "I still need more information.",
+#         "polite": "I would need some additional information, please.",
+#         "friendly": "I just need a little more information.",
+#         "professional": "I require some additional information to proceed.",
+#         "formal": "I would appreciate receiving the additional information required to proceed.",
+#     },
+
+
+#     # ========================================================
+#     # DAILY COMMUNICATION - 91 to 100
+#     # ========================================================
+
+#     {
+#         "input": "အခုလာနေပြီ။",
+#         "simple": "I'm on my way.",
+#         "polite": "I'm on my way now.",
+#         "friendly": "I'm on my way!",
+#         "professional": "I am currently on my way.",
+#         "formal": "I am currently en route.",
+#     },
+
+#     {
+#         "input": "မသေချာသေးဘူး။",
+#         "simple": "I'm not sure yet.",
+#         "polite": "I'm not sure yet, I'm afraid.",
+#         "friendly": "I'm not sure yet.",
+#         "professional": "I don't have confirmation yet.",
+#         "formal": "I am unable to confirm this at the moment.",
+#     },
+
+#     {
+#         "input": "ကြိုးစားကြည့်မယ်။",
+#         "simple": "I'll try.",
+#         "polite": "I'll do my best.",
+#         "friendly": "I'll give it a try.",
+#         "professional": "I will do my best to accomplish it.",
+#         "formal": "I will make every effort to accomplish this.",
+#     },
+
+#     {
+#         "input": "မိုးရွာနေလို့ အပြင်မထွက်တော့ဘူး။",
+#         "simple": "It's raining, so I won't go outside.",
+#         "polite": "Since it's raining, I think I'll stay inside.",
+#         "friendly": "It's raining, so I'm going to stay in.",
+#         "professional": "Due to the rain, I will not be going outside.",
+#         "formal": "Due to the current weather conditions, I will remain indoors.",
+#     },
+
+#     {
+#         "input": "နောက်မှပြန်ခေါ်မယ်။",
+#         "simple": "I'll call you back later.",
+#         "polite": "I'll call you back later, if that's okay.",
+#         "friendly": "I'll call you back later.",
+#         "professional": "I will return your call later.",
+#         "formal": "I will return your call at a later time.",
+#     },
+
+#     {
+#         "input": "အခုမအားသေးဘူး။",
+#         "simple": "I'm not free right now.",
+#         "polite": "I'm sorry, but I'm not available right now.",
+#         "friendly": "I'm a little busy right now.",
+#         "professional": "I'm currently unavailable.",
+#         "formal": "I am currently unavailable and will respond when I am free.",
+#     },
+
+#     {
+#         "input": "နည်းနည်းစောင့်ပေးပါ။",
+#         "simple": "Please wait a little.",
+#         "polite": "Could you please wait for a moment?",
+#         "friendly": "Just give me a minute, please.",
+#         "professional": "Could you please give me a moment?",
+#         "formal": "I would appreciate your patience for a brief moment.",
+#     },
+
+#     {
+#         "input": "ကျေးဇူးပြုပြီး ပြန်ရှင်းပြပေးပါ။",
+#         "simple": "Please explain it again.",
+#         "polite": "Could you please explain it again?",
+#         "friendly": "Can you explain it again for me?",
+#         "professional": "Could you please clarify this again?",
+#         "formal": "I would appreciate it if you could provide further clarification.",
+#     },
+
+#     {
+#         "input": "ကူညီပေးလို့ ကျေးဇူးတင်ပါတယ်။",
+#         "simple": "Thank you for helping me.",
+#         "polite": "Thank you very much for your help.",
+#         "friendly": "Thanks a lot for helping me!",
+#         "professional": "Thank you for your assistance.",
+#         "formal": "I sincerely appreciate your assistance and support.",
+#     },
+
+#     {
+#         "input": "တောင်းပန်ပါတယ်၊ မေ့သွားတယ်။",
+#         "simple": "Sorry, I forgot.",
+#         "polite": "I'm sorry, I completely forgot.",
+#         "friendly": "Sorry, it slipped my mind.",
+#         "professional": "I apologize; I overlooked it.",
+#         "formal": "Please accept my apologies for having overlooked this matter.",
+#     },
+# ]
+
+
+# # ============================================================
+# # Normalize text
+# # ============================================================
+
+# def normalize_text(text: str) -> str:
+#     """
+#     Normalize Myanmar/English mixed input for matching.
+#     """
+#     text = text.strip().lower()
+
+#     # Normalize different punctuation
+#     text = re.sub(r"[၊,]", " ", text)
+#     text = re.sub(r"[။.!?]", "", text)
+
+#     # Normalize multiple spaces
+#     text = re.sub(r"\s+", " ", text)
+
+#     return text.strip()
+
+
+# # ============================================================
+# # Find training/reference example
+# # ============================================================
+
+# def find_training_example(text: str):
+#     """
+#     Find an exact normalized match from the 100 examples.
+#     """
+
+#     normalized_input = normalize_text(text)
+
+#     for example in TRAINING_EXAMPLES:
+#         example_input = normalize_text(example["input"])
+
+#         if normalized_input == example_input:
+#             return example
+
+#     return None
+
+
+# # ============================================================
+# # Context-aware translation rules
+# # ============================================================
+
+# def _contains_any(text: str, phrases: list[str]) -> bool:
+#     return any(phrase in text for phrase in phrases)
+
+
+# def contextual_rule_translation(text: str, tone: str):
+#     """
+#     Semantic/context rules for long Myanmar, English, and mixed-language
+#     messages. These rules are deliberately clause-aware: they preserve
+#     cause -> situation -> consequence -> request/action instead of matching
+#     only the final intent.
+#     """
+#     n = normalize_text(text)
+
+#     def has(*phrases):
+#         return _contains_any(n, list(phrases))
+
+#     def variants(simple, polite, friendly, professional, formal):
+#         return {
+#             "simple": simple,
+#             "polite": polite,
+#             "friendly": friendly,
+#             "professional": professional,
+#             "formal": formal,
+#         }.get(tone, professional)
+
+#     # --------------------------------------------------------
+#     # FIRST: MULTI-CAUSE MESSAGES
+#     # --------------------------------------------------------
+#     # This MUST run before any single-cause rule. A message can contain
+#     # rain + flooding + traffic + a destination + a delay. Never return
+#     # early just because the word "traffic" was found.
+#     early_weather = has(
+#         "မိုး", "မိုးရွာ", "မိုးကြီး", "မိုးသည်း", "မိုးသည်းကြီးမည်းကြီး",
+#         "rain", "raining", "heavy rain", "poured"
+#     )
+#     early_traffic = has(
+#         "ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်",
+#         "traffic", "traffic jam", "heavy traffic"
+#     )
+#     early_flood = has(
+#         "ရေလျှံ", "ရေတွေ လျှံ", "ရေကြီး", "ရေဝင်",
+#         "flood", "flooded", "flooding"
+#     )
+#     early_delay = has("နောက်ကျ", "နောက်ကျမယ်", "late", "delayed", "delay")
+#     early_wait = has("စောင့်", "wait", "wait for me")
+#     early_school = has("ကျောင်း", "school")
+#     early_work = has("အလုပ်", "work", "office")
+#     early_meeting = has("meeting", "အစည်းအဝေး")
+
+#     early_cause_count = sum([early_weather, early_flood, early_traffic])
+
+#     if early_cause_count >= 2 and (early_delay or early_wait):
+#         if early_meeting:
+#             early_destination = "the meeting"
+#         elif early_school:
+#             early_destination = "school"
+#         elif early_work:
+#             early_destination = "work"
+#         else:
+#             early_destination = "my destination"
+
+#         early_causes = []
+#         if early_weather:
+#             early_causes.append("It rained heavily this morning")
+#         if early_flood:
+#             early_causes.append("the area in front of my house is flooded")
+#         if early_traffic:
+#             early_causes.append("there is also heavy traffic on the way")
+
+#         if len(early_causes) == 2:
+#             early_reason_sentence = early_causes[0] + ", and " + early_causes[1]
+#         else:
+#             early_reason_sentence = ", ".join(early_causes[:-1]) + ", and " + early_causes[-1]
+
+#         if early_wait:
+#             return variants(
+#                 f"{early_reason_sentence}, so I'll be late getting to {early_destination}. Please wait for me for a little while.",
+#                 f"{early_reason_sentence}, so I'm going to be late getting to {early_destination}. I'm sorry, but could you please wait for me for a little while?",
+#                 f"{early_reason_sentence}, so I'll be a little late getting to {early_destination}. Please wait for me for a bit.",
+#                 f"{early_reason_sentence}, so I will be late getting to {early_destination}. Could you please wait for me for a little while?",
+#                 f"Due to the heavy rain, flooding in front of my house, and heavy traffic on the way, I will be delayed in reaching {early_destination}. I would appreciate your patience and ask that you please wait for me for a little while.",
+#             )
+
+#         return variants(
+#             f"{early_reason_sentence}, so I'll be late getting to {early_destination} today.",
+#             f"{early_reason_sentence}, so I'm sorry, but I'll be late getting to {early_destination} today.",
+#             f"{early_reason_sentence}, so I'll be a little late getting to {early_destination} today.",
+#             f"{early_reason_sentence}, so I will be late getting to {early_destination} today.",
+#             f"Due to the heavy rain, flooding in front of my house, and heavy traffic on the way, I will be delayed in reaching {early_destination} today.",
+#         )
+
+#     # --------------------------------------------------------
+#     # A. Long chained message: late meeting -> poor sleep -> work absence
+#     # --------------------------------------------------------
+#     if (
+#         has("meeting", "အစည်းအဝေး")
+#         and has("နောက်ကျ", "ended late", "ran late", "finished late", "late last night")
+#         and has("အိပ်ရေးမဝ", "အိပ်မဝ", "အိပ်ရေးမလုံ", "အိပ်မပျော်", "ပင်ပန်း", "tired", "not enough sleep", "didn't get enough sleep", "did not get enough sleep", "barely slept")
+#         and has("အလုပ်", "work", "office")
+#         and has("မလာ", "မလာတော့", "မသွား", "won't come", "will not come", "not coming", "won't be coming", "will not be coming")
+#     ):
+#         return variants(
+#             "The meeting ended late last night, and I didn't get enough sleep, so I won't be coming to work today.",
+#             "The meeting ended quite late last night, and I didn't get enough sleep, so I'm sorry, but I won't be able to come to work today.",
+#             "The meeting ran late last night, and I barely got enough sleep, so I won't be coming to work today.",
+#             "The meeting ended late last night, and I did not get enough sleep, so I will not be coming to work today.",
+#             "As the meeting ended late last night and I did not get sufficient sleep, I will be unable to come to work today.",
+#         )
+
+#     # Same meaning even when the time phrase is omitted.
+#     if (
+#         has("meeting", "အစည်းအဝေး")
+#         and has("နောက်ကျ", "ended late", "ran late", "finished late")
+#         and has("အိပ်ရေးမဝ", "အိပ်မဝ", "ပင်ပန်း", "tired", "not enough sleep", "didn't get enough sleep", "barely slept")
+#         and has("အလုပ်", "work", "office")
+#         and has("မလာ", "မလာတော့", "မသွား", "won't come", "not coming", "won't be coming")
+#     ):
+#         return variants(
+#             "The meeting ended late, and I didn't get enough sleep, so I won't be coming to work today.",
+#             "The meeting ended late, and I didn't get enough sleep, so I'm sorry, but I won't be able to come to work today.",
+#             "The meeting ran late, and I barely got enough sleep, so I won't be coming to work today.",
+#             "The meeting ended late, and I did not get enough sleep, so I will not be coming to work today.",
+#             "As the meeting ended late and I did not get sufficient sleep, I will be unable to come to work today.",
+#         )
+
+#     # --------------------------------------------------------
+#     # B. Traffic + meeting delay + explicit waiting request
+#     # --------------------------------------------------------
+#     if (
+#         has("ကားပိတ်", "ကားလမ်းပိတ်", "လမ်းပိတ်", "ကားကြပ်", "traffic", "traffic jam", "heavy traffic")
+#         and has("meeting", "အစည်းအဝေး")
+#         and has("နောက်ကျ", "late", "delayed")
+#         and has("စောင့်", "wait", "give me a moment", "wait for me")
+#     ):
+#         return variants(
+#             "There's heavy traffic at the end of the street, so I'll be late for the meeting. Please wait for me for a little while.",
+#             "There's heavy traffic at the end of the street, so I'm going to be late for the meeting. I'm sorry, but could you please wait for me for a little while?",
+#             "There's a traffic jam at the end of the street, so I'll be late for the meeting. Please wait for me a little while.",
+#             "There's heavy traffic at the end of the street, so I'll be late for the meeting. Could you please wait for me for a little while?",
+#             "There is heavy traffic at the end of the street, which is causing me to be late for the meeting. I would appreciate your patience and ask that you please wait for me for a little while.",
+#         )
+
+#     # --------------------------------------------------------
+#     # C. Heavy rain + flooding + school delay
+#     # --------------------------------------------------------
+#     if (
+#         has("မိုးသည်း", "မိုးရွာ", "မိုးကြီး", "မိုးသည်းကြီးမည်းကြီး", "rain", "raining", "poured", "heavy rain")
+#         and has("ရေလျှံ", "ရေတွေ လျှံ", "ရေဝင်", "flood", "flooded", "flooding", "water is overflowing")
+#         and has("ကျောင်း", "school")
+#         and has("နောက်ကျ", "late", "delayed")
+#     ):
+#         return variants(
+#             "It rained heavily this morning, and the area in front of my house is flooded, so I'll be late getting to school today.",
+#             "It rained very heavily this morning, and the area in front of my house is flooded, so I'm sorry, but I'll be late getting to school today.",
+#             "It poured this morning, and there's water all over the front of my house, so I'll be a little late getting to school today.",
+#             "It rained heavily this morning, and the area in front of my house is flooded, so I will be late getting to school today.",
+#             "Due to the heavy rain this morning and flooding in front of my house, I will be delayed in getting to school today.",
+#         )
+
+#     # --------------------------------------------------------
+#     # D. Mother's/family health issue + work leave
+#     # --------------------------------------------------------
+#     if (
+#         has("အမေ", "မိခင်", "mother", "mom", "mum")
+#         and has("ကျန်းမာရေး", "နေမကောင်း", "health", "not feeling well", "sick")
+#         and has("အလုပ်", "work", "office")
+#         and has("ခွင့်", "leave", "day off", "take a day off")
+#     ):
+#         return variants(
+#             "My mother has a health issue, so I'd like to take a day off from work today.",
+#             "My mother is having a health issue, so I'm sorry, but I'd like to request a day off from work today.",
+#             "My mom isn't feeling well, so I'd like to take the day off from work today.",
+#             "Due to a health issue involving my mother, I would like to request one day of leave from work today.",
+#             "Due to a health-related matter concerning my mother, I would like to respectfully request one day of leave from work today.",
+#         )
+
+#     # --------------------------------------------------------
+#     # E. Family health/emergency + work leave (generic family member)
+#     # --------------------------------------------------------
+#     if (
+#         has("မိသားစု", "family", "အိမ်က")
+#         and has("ကျန်းမာရေး", "health", "နေမကောင်း", "sick", "ဆေးရုံ", "hospital", "အရေးပေါ်", "emergency")
+#         and has("အလုပ်", "work", "office")
+#         and has("ခွင့်", "leave", "day off")
+#     ):
+#         return variants(
+#             "There is a health issue in my family that I need to take care of, so I'd like to take a day off from work today.",
+#             "There is a health issue in my family that I need to take care of, so I'd like to request a day off from work today.",
+#             "There's a family health issue I need to take care of, so I'd like to take the day off today.",
+#             "Due to a family health matter that requires my attention, I would like to request one day of leave from work today.",
+#             "Due to a family health matter requiring my attention, I would like to respectfully request one day of leave from work today.",
+#         )
+
+#     # --------------------------------------------------------
+#     # COMPOUND WEATHER + TRAFFIC / MULTI-CAUSE CONTEXT
+#     #
+#     # IMPORTANT: Never let one detected cause (for example "traffic")
+#     # hide another meaningful cause (for example "heavy rain").
+#     # A long message may contain several causes and all of them must
+#     # survive in the English translation.
+#     # --------------------------------------------------------
+#     has_weather = has(
+#         "မိုး", "မိုးရွာ", "မိုးကြီး", "မိုးသည်း", "မိုးသည်းကြီးမည်းကြီး",
+#         "rain", "raining", "heavy rain", "poured"
+#     )
+#     has_traffic = has(
+#         "ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်",
+#         "traffic", "traffic jam", "heavy traffic"
+#     )
+#     has_flood = has(
+#         "ရေလျှံ", "ရေတွေ လျှံ", "ရေကြီး", "ရေဝင်",
+#         "flood", "flooded", "flooding"
+#     )
+#     has_delay = has("နောက်ကျ", "နောက်ကျမယ်", "late", "delayed", "delay")
+#     has_wait = has("စောင့်", "wait", "wait for me")
+#     destination_school = has("ကျောင်း", "school")
+#     destination_work = has("အလုပ်", "work", "office")
+#     destination_meeting = has("meeting", "အစည်းအဝေး")
+
+#     if (
+#         (has_weather and has_traffic and has_delay)
+#         or (has_weather and has_traffic and has_wait)
+#     ):
+#         destination = (
+#             "the meeting" if destination_meeting
+#             else "school" if destination_school
+#             else "work" if destination_work
+#             else "my destination"
+#         )
+
+#         # Include every detected cause instead of selecting only traffic.
+#         cause_sentence = (
+#             "It rained heavily, and there is heavy traffic on the way"
+#             if has_weather and has_traffic
+#             else "It is raining heavily"
+#             if has_weather
+#             else "There is heavy traffic on the way"
+#         )
+
+#         if has_wait:
+#             return variants(
+#                 f"{cause_sentence}, so I'll be delayed getting to {destination}. Please wait for me for a little while.",
+#                 f"{cause_sentence}, so I'm going to be late getting to {destination}. I'm sorry, but could you please wait for me for a little while?",
+#                 f"{cause_sentence}, so I'll be a little late getting to {destination}. Please wait for me for a bit.",
+#                 f"{cause_sentence}, so I will be delayed getting to {destination}. Could you please wait for me for a little while?",
+#                 f"Due to the heavy rain and traffic conditions, I will be delayed in reaching {destination}. I would appreciate your patience and ask that you please wait for me for a little while.",
+#             )
+
+#         return variants(
+#             f"{cause_sentence}, so I'll be late getting to {destination}.",
+#             f"{cause_sentence}, so I'm sorry, but I'll be late getting to {destination}.",
+#             f"{cause_sentence}, so I'll be a little late getting to {destination}.",
+#             f"{cause_sentence}, so I will be late getting to {destination}.",
+#             f"Due to the heavy rain and traffic conditions, I will be delayed in reaching {destination}.",
+#         )
+
+#     # Rain + flooding + a destination, even when the exact "school" rule
+#     # does not match. Keep both the weather and flooding information.
+#     if has_weather and has_flood and has_delay and (destination_school or destination_work):
+#         destination = "school" if destination_school else "work"
+#         return variants(
+#             f"It rained heavily, and the area around my house is flooded, so I'll be late getting to {destination}.",
+#             f"It rained heavily, and the area around my house is flooded, so I'm sorry, but I'll be late getting to {destination}.",
+#             f"It poured this morning, and there's flooding around my house, so I'll be a little late getting to {destination}.",
+#             f"It rained heavily, and the area around my house is flooded, so I will be late getting to {destination}.",
+#             f"Due to the heavy rain and flooding around my house, I will be delayed in reaching {destination}.",
+#         )
+
+#     # --------------------------------------------------------
+#     # F. Transportation/traffic + work/school delay, no wait request
+#     # --------------------------------------------------------
+#     if has("ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်", "traffic", "traffic jam", "heavy traffic") and has("နောက်ကျ", "late", "delayed"):
+#         if has("ကျောင်း", "school"):
+#             return variants(
+#                 "There's heavy traffic, so I'll be late getting to school.",
+#                 "I'm sorry, but there's heavy traffic, so I'll be late getting to school.",
+#                 "There's a lot of traffic, so I'll be a little late getting to school.",
+#                 "There's heavy traffic, so I'll be late getting to school.",
+#                 "Due to heavy traffic, I will be delayed in arriving at school.",
+#             )
+#         if has("အလုပ်", "work", "office"):
+#             return variants(
+#                 "There's heavy traffic, so I'll be late for work.",
+#                 "I'm sorry, but there's heavy traffic, so I'll be late for work.",
+#                 "There's a lot of traffic, so I'll be a little late for work.",
+#                 "There's heavy traffic, so I'll be late for work.",
+#                 "Due to heavy traffic, I will be delayed in arriving at work.",
+#             )
+#         return variants(
+#             "There's heavy traffic, so I'll be late.",
+#             "I'm sorry, but there's heavy traffic, so I'll be late.",
+#             "There's a lot of traffic, so I'll be a little late.",
+#             "There's heavy traffic, so I'll be late.",
+#             "Due to heavy traffic, I will be delayed.",
+#         )
+
+#     # --------------------------------------------------------
+#     # G. General meeting delay + tiredness (without work absence)
+#     # --------------------------------------------------------
+#     if (
+#         has("meeting", "အစည်းအဝေး")
+#         and has("နောက်ကျ", "ended late", "ran late", "finished late")
+#         and has("အိပ်ရေးမဝ", "အိပ်မဝ", "ပင်ပန်း", "tired", "not enough sleep", "didn't get enough sleep", "barely slept")
+#     ):
+#         return variants(
+#             "The meeting ended late, and I didn't get enough sleep, so I'm very tired today.",
+#             "The meeting ended late, and I didn't get enough sleep, so I'm quite tired today.",
+#             "The meeting ran late, and I barely got enough sleep, so I'm really tired today.",
+#             "The meeting ended late, and I did not get enough sleep, so I am feeling very tired today.",
+#             "As the meeting ended late and I did not get sufficient sleep, I am feeling quite fatigued today.",
+#         )
+
+#     # --------------------------------------------------------
+#     # H. On the way + traffic + waiting request
+#     # --------------------------------------------------------
+#     if has("လမ်းမှာ", "လာနေ", "on my way") and has("ကားပိတ်", "ကားကြပ်", "traffic", "လမ်းပိတ်") and has("စောင့်", "wait", "wait for me"):
+#         return variants(
+#             "I'm on my way, but I'm stuck in traffic, so please wait for me for a little while.",
+#             "I'm on my way, but I'm stuck in traffic. Could you please wait for me for a little while?",
+#             "I'm on my way, but I'm stuck in traffic, so please wait for me a little while.",
+#             "I'm currently on my way, but I'm stuck in traffic. Could you please wait for me for a little while?",
+#             "I am currently on my way but delayed by traffic. I would appreciate your patience and ask that you please wait for me for a little while.",
+#         )
+
+#     # --------------------------------------------------------
+#     # I. Generic waiting requests with known reasons
+#     # --------------------------------------------------------
+#     if has("စောင့်", "wait", "wait for me", "ခနစောင့်", "ခဏစောင့်"):
+#         if has("မိုး", "rain", "raining"):
+#             return variants(
+#                 "It's raining right now, so please wait for me for a little while.",
+#                 "It's raining right now, so could you please wait for me for a little while?",
+#                 "It's raining right now, so please wait for me a little while.",
+#                 "It's currently raining, so could you please wait for me for a little while?",
+#                 "As it is currently raining, I would appreciate your patience and ask that you please wait for me for a little while.",
+#             )
+#         if has("မအား", "busy", "အလုပ်များ", "unavailable"):
+#             return variants(
+#                 "I'm a little busy right now, so please wait for me for a moment.",
+#                 "I'm sorry, I'm a little busy right now. Could you please wait for me for a moment?",
+#                 "I'm a little busy right now, so just give me a moment, please.",
+#                 "I'm currently unavailable, so could you please wait for me for a moment?",
+#                 "I am currently unavailable. I would appreciate your patience for a brief moment.",
+#             )
+#         return variants(
+#             "Please wait for me for a moment.",
+#             "Could you please wait for me for a moment?",
+#             "Just give me a moment, please.",
+#             "Could you please give me a moment?",
+#             "I would appreciate your patience for a brief moment.",
+#         )
+
+#     return None
+
+
+
+# # ============================================================
+# # COMPLETE-MEANING / AI UNDERSTANDING LAYER
+# # ============================================================
+# #
+# # The translation and the "AI Understanding" panel must use the same
+# # semantic interpretation.  Do not reduce a long message to its final
+# # intent and then lose the earlier reasons.
+# #
+# # This layer is deliberately lightweight and deterministic for high-
+# # confidence patterns. Qwen is still used for unknown translations.
+# # ============================================================
+
+# def detect_input_language(text: str) -> str:
+#     has_mm = bool(re.search(r"[\u1000-\u109F]", text))
+#     # Treat common English words as English content even when Myanmar text
+#     # is also present.
+#     has_en = bool(re.search(r"[A-Za-z]", text))
+#     if has_mm and has_en:
+#         return "Mixed Myanmar + English"
+#     if has_mm:
+#         return "Myanmar (Unicode)"
+#     if has_en:
+#         return "English"
+#     return "Unknown"
+
+
+# def build_ai_understanding(
+#     text: str,
+#     requested_tone: str = "professional",
+#     audience: str = "auto",
+# ) -> dict[str, str]:
+#     """
+#     Extract the complete meaning needed by both the UI and the translation
+#     prompt.  The key design rule is:
+
+#         reason/cause -> situation -> consequence -> main action/request
+
+#     Never replace a long message's reason with "reason unspecified" when
+#     the source clearly contains one.
+#     """
+#     n = normalize_text(text)
+
+#     def has(*phrases):
+#         return _contains_any(n, list(phrases))
+
+#     language = detect_input_language(text)
+
+#     # --------------------------------------------------------
+#     # FIRST: MULTI-CAUSE UNDERSTANDING
+#     # --------------------------------------------------------
+#     # This must run before single-cause traffic/rain rules.
+#     u_weather = has(
+#         "မိုး", "မိုးရွာ", "မိုးကြီး", "မိုးသည်း", "မိုးသည်းကြီးမည်းကြီး",
+#         "rain", "raining", "heavy rain", "poured"
+#     )
+#     u_traffic = has(
+#         "ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်",
+#         "traffic", "traffic jam", "heavy traffic"
+#     )
+#     u_flood = has(
+#         "ရေလျှံ", "ရေတွေ လျှံ", "ရေကြီး", "ရေဝင်",
+#         "flood", "flooded", "flooding"
+#     )
+#     u_delay = has("နောက်ကျ", "နောက်ကျမယ်", "late", "delayed", "delay")
+#     u_wait = has("စောင့်", "wait", "wait for me")
+#     u_school = has("ကျောင်း", "school")
+#     u_work = has("အလုပ်", "work", "office")
+#     u_meeting = has("meeting", "အစည်းအဝေး")
+
+#     u_cause_count = sum([u_weather, u_flood, u_traffic])
+
+#     if u_cause_count >= 2 and (u_delay or u_wait):
+#         if u_meeting:
+#             u_destination = "the meeting"
+#         elif u_school:
+#             u_destination = "school"
+#         elif u_work:
+#             u_destination = "work"
+#         else:
+#             u_destination = "the destination"
+
+#         u_reasons = []
+#         if u_weather:
+#             u_reasons.append("heavy rain this morning")
+#         if u_flood:
+#             u_reasons.append("flooding in front of the sender's house")
+#         if u_traffic:
+#             u_reasons.append("heavy traffic on the way")
+
+#         if len(u_reasons) == 2:
+#             u_reason_text = u_reasons[0] + " and " + u_reasons[1]
+#         else:
+#             u_reason_text = ", ".join(u_reasons[:-1]) + ", and " + u_reasons[-1]
+
+#         return {
+#             "language": language,
+#             "intent": (
+#                 "Inform recipient about a delay and ask them to wait"
+#                 if u_wait
+#                 else f"Inform recipient that the sender will be late for {u_destination}"
+#             ),
+#             "audience": (
+#                 "Colleague" if u_work or u_meeting
+#                 else "Teacher / school contact" if u_school
+#                 else ("Recipient" if audience == "auto" else audience)
+#             ) if audience == "auto" else audience,
+#             "situation": (
+#                 f"The sender expects to arrive late at {u_destination} because of {u_reason_text}."
+#                 if not u_wait
+#                 else f"The sender is delayed by {u_reason_text} and is asking the recipient to wait."
+#             ),
+#             "reason": f"The message gives multiple reasons: {u_reason_text}.",
+#             "main_action": (
+#                 f"Inform the recipient that the sender will be late getting to {u_destination}."
+#                 if not u_wait
+#                 else "Ask the recipient to wait for the sender."
+#             ),
+#             "cause_chain": (
+#                 f"{u_reason_text} → travel delay → late arrival at {u_destination}."
+#                 if not u_wait
+#                 else f"{u_reason_text} → travel delay → sender asks recipient to wait."
+#             ),
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Meeting late -> insufficient sleep -> work absence
+#     # --------------------------------------------------------
+#     if (
+#         has("meeting", "အစည်းအဝေး")
+#         and has("နောက်ကျ", "ended late", "ran late", "finished late", "late last night")
+#         and has(
+#             "အိပ်ရေးမဝ", "အိပ်မဝ", "အိပ်ရေးမလုံ", "အိပ်မပျော်",
+#             "ပင်ပန်း", "tired", "not enough sleep",
+#             "didn't get enough sleep", "did not get enough sleep",
+#             "barely slept", "barely got enough sleep"
+#         )
+#         and has("အလုပ်", "work", "office")
+#         and has(
+#             "မလာ", "မလာတော့", "မသွား",
+#             "won't come", "will not come", "not coming",
+#             "won't be coming", "will not be coming",
+#             "won't be able to come", "unable to come"
+#         )
+#     ):
+#         return {
+#             "language": language,
+#             "intent": "Inform recipient that the sender will not come to work",
+#             "audience": "Colleague" if audience == "auto" else audience,
+#             "situation": "The sender will not be coming to work today after a late meeting and insufficient sleep.",
+#             "reason": "The meeting ended late last night, which resulted in insufficient sleep.",
+#             "main_action": "The sender will not come to work today.",
+#             "cause_chain": "Meeting ended late last night → insufficient sleep → sender will not come to work today.",
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Traffic + meeting delay + waiting
+#     # --------------------------------------------------------
+#     if (
+#         has("ကားပိတ်", "ကားလမ်းပိတ်", "လမ်းပိတ်", "ကားကြပ်", "traffic", "traffic jam", "heavy traffic")
+#         and has("meeting", "အစည်းအဝေး")
+#         and has("နောက်ကျ", "late", "delayed")
+#         and has("စောင့်", "wait", "wait for me")
+#     ):
+#         return {
+#             "language": language,
+#             "intent": "Inform recipient about a meeting delay and ask them to wait",
+#             "audience": "Colleague" if audience == "auto" else audience,
+#             "situation": "The sender is delayed by traffic and expects to arrive late for the meeting.",
+#             "reason": "There is heavy traffic on the way.",
+#             "main_action": "Ask the recipient to wait for the sender.",
+#             "cause_chain": "Heavy traffic → meeting delay → sender asks recipient to wait.",
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Heavy rain + flooding + school delay
+#     # --------------------------------------------------------
+#     if (
+#         has("မိုးသည်း", "မိုးရွာ", "မိုးကြီး", "မိုးသည်းကြီးမည်းကြီး", "rain", "raining", "poured", "heavy rain")
+#         and has("ရေလျှံ", "ရေတွေ လျှံ", "ရေဝင်", "flood", "flooded", "flooding", "water is overflowing")
+#         and has("ကျောင်း", "school")
+#         and has("နောက်ကျ", "late", "delayed")
+#     ):
+#         return {
+#             "language": language,
+#             "intent": "Inform recipient that the sender will be late for school",
+#             "audience": "Teacher / school contact" if audience == "auto" else audience,
+#             "situation": "The sender will arrive late at school today.",
+#             "reason": "Heavy rain caused flooding in front of the sender's house.",
+#             "main_action": "Inform the recipient about the delay in arriving at school.",
+#             "cause_chain": "Heavy rain this morning → flooding in front of the house → delayed departure/arrival → late for school.",
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Mother's health issue + work leave
+#     # --------------------------------------------------------
+#     if (
+#         has("အမေ", "မိခင်", "mother", "mom", "mum")
+#         and has("ကျန်းမာရေး", "နေမကောင်း", "health", "not feeling well", "sick")
+#         and has("အလုပ်", "work", "office")
+#         and has("ခွင့်", "leave", "day off", "take a day off")
+#     ):
+#         return {
+#             "language": language,
+#             "intent": "Request one day of leave from work",
+#             "audience": "Manager / employer" if audience == "auto" else audience,
+#             "situation": "The sender wants to take one day off work today.",
+#             "reason": "The sender's mother has a health-related issue that requires attention.",
+#             "main_action": "Request one day of leave from work today.",
+#             "cause_chain": "Mother's health issue → sender needs to attend to the situation → request for one day of work leave.",
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Generic family health + leave
+#     # --------------------------------------------------------
+#     if (
+#         has("မိသားစု", "family", "အိမ်က")
+#         and has("ကျန်းမာရေး", "health", "နေမကောင်း", "sick", "ဆေးရုံ", "hospital", "အရေးပေါ်", "emergency")
+#         and has("အလုပ်", "work", "office")
+#         and has("ခွင့်", "leave", "day off")
+#     ):
+#         return {
+#             "language": language,
+#             "intent": "Request time off from work for a family matter",
+#             "audience": "Manager / employer" if audience == "auto" else audience,
+#             "situation": "The sender needs time away from work to handle a family health matter.",
+#             "reason": "A family member has a health-related issue requiring the sender's attention.",
+#             "main_action": "Request time off from work.",
+#             "cause_chain": "Family health matter → sender needs to handle it → request for work leave.",
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # COMPOUND CAUSES: preserve ALL meaningful reasons.
+#     #
+#     # This must run before the generic traffic rule. Otherwise a message
+#     # containing both rain and traffic can be incorrectly reduced to
+#     # "traffic caused the delay".
+#     # --------------------------------------------------------
+#     has_weather = has(
+#         "မိုး", "မိုးရွာ", "မိုးကြီး", "မိုးသည်း", "မိုးသည်းကြီးမည်းကြီး",
+#         "rain", "raining", "heavy rain", "poured"
+#     )
+#     has_traffic = has(
+#         "ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်",
+#         "traffic", "traffic jam", "heavy traffic"
+#     )
+#     has_flood = has(
+#         "ရေလျှံ", "ရေတွေ လျှံ", "ရေကြီး", "ရေဝင်",
+#         "flood", "flooded", "flooding"
+#     )
+#     has_delay = has("နောက်ကျ", "နောက်ကျမယ်", "late", "delayed", "delay")
+#     has_wait = has("စောင့်", "wait", "wait for me")
+#     destination_school = has("ကျောင်း", "school")
+#     destination_work = has("အလုပ်", "work", "office")
+#     destination_meeting = has("meeting", "အစည်းအဝေး")
+
+#     if (has_weather and has_traffic and (has_delay or has_wait)):
+#         destination = (
+#             "the meeting" if destination_meeting
+#             else "school" if destination_school
+#             else "work" if destination_work
+#             else "the destination"
+#         )
+
+#         reasons = []
+#         if has_weather:
+#             reasons.append("heavy rain")
+#         if has_flood:
+#             reasons.append("flooding around the house")
+#         if has_traffic:
+#             reasons.append("heavy traffic")
+
+#         reason_text = " and ".join(reasons)
+
+#         if has_wait:
+#             action = f"Ask the recipient to wait for the sender while the sender is delayed."
+#         else:
+#             action = f"Inform the recipient that the sender will be late getting to {destination}."
+
+#         return {
+#             "language": language,
+#             "intent": (
+#                 "Inform recipient about a delay and ask them to wait"
+#                 if has_wait
+#                 else f"Inform recipient that the sender will be late for {destination}"
+#             ),
+#             "audience": (
+#                 "Colleague" if destination_work or destination_meeting
+#                 else "Teacher / school contact" if destination_school
+#                 else ("Recipient" if audience == "auto" else audience)
+#             ) if audience == "auto" else audience,
+#             "situation": (
+#                 f"The sender is delayed by {reason_text} and expects to arrive late at {destination}."
+#                 if not has_wait
+#                 else f"The sender is delayed by {reason_text} and is asking the recipient to wait."
+#             ),
+#             "reason": (
+#                 f"The message gives multiple reasons for the delay: {reason_text}."
+#             ),
+#             "main_action": action,
+#             "cause_chain": (
+#                 f"{reason_text} → travel delay → late arrival at {destination}."
+#                 if not has_wait
+#                 else f"{reason_text} → travel delay → sender asks recipient to wait."
+#             ),
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Generic traffic delay
+#     # --------------------------------------------------------
+#     if has("ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်", "traffic", "traffic jam", "heavy traffic") and has("နောက်ကျ", "late", "delayed"):
+#         destination = "school" if has("ကျောင်း", "school") else (
+#             "work" if has("အလုပ်", "work", "office") else "the destination"
+#         )
+#         return {
+#             "language": language,
+#             "intent": f"Inform recipient that the sender will be late for {destination}",
+#             "audience": "Colleague" if destination == "work" and audience == "auto" else (
+#                 "Teacher / school contact" if destination == "school" and audience == "auto"
+#                 else (audience if audience != "auto" else "Recipient")
+#             ),
+#             "situation": f"The sender is delayed by traffic and will arrive late at {destination}.",
+#             "reason": "Heavy traffic is causing the delay.",
+#             "main_action": f"Inform the recipient that the sender will be late for {destination}.",
+#             "cause_chain": f"Heavy traffic → delay → late arrival at {destination}.",
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Generic waiting request with a detected reason
+#     # --------------------------------------------------------
+#     if has("စောင့်", "wait", "wait for me"):
+#         reason = ""
+#         if has("မိုး", "rain", "raining"):
+#             reason = "It is raining."
+#         elif has("မအား", "busy", "အလုပ်များ", "unavailable"):
+#             reason = "The sender is currently busy or unavailable."
+#         elif has("ကားပိတ်", "traffic", "traffic jam"):
+#             reason = "The sender is delayed by traffic."
+
+#         if reason:
+#             return {
+#                 "language": language,
+#                 "intent": "Ask the recipient to wait",
+#                 "audience": "Recipient" if audience == "auto" else audience,
+#                 "situation": "The sender is asking the recipient to wait for a short time.",
+#                 "reason": reason,
+#                 "main_action": "Ask the recipient to wait.",
+#                 "cause_chain": f"{reason} → sender asks recipient to wait.",
+#                 "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#             }
+
+#     # --------------------------------------------------------
+#     # Generic work absence: do not falsely say reason is absent if
+#     # the message contains a recognizable causal clause.
+#     # --------------------------------------------------------
+#     if has("အလုပ်", "work", "office") and has(
+#         "မလာ", "မလာတော့", "မသွား", "won't come", "will not come",
+#         "not coming", "won't be coming", "unable to come", "cannot come"
+#     ):
+#         reason = ""
+#         cause_chain = ""
+#         if has("meeting", "အစည်းအဝေး") and has("နောက်ကျ", "late", "delayed"):
+#             reason = "The meeting ended late."
+#             if has("အိပ်ရေးမဝ", "အိပ်မဝ", "tired", "not enough sleep", "barely slept"):
+#                 reason = "The meeting ended late, so the sender did not get enough sleep."
+#                 cause_chain = "Meeting ended late → insufficient sleep → work absence."
+#             else:
+#                 cause_chain = "Meeting ended late → work absence."
+#         elif has("မိုး", "rain", "raining"):
+#             reason = "Rain is affecting the sender's ability to travel."
+#             cause_chain = "Rain/travel difficulty → work absence."
+#         elif has("ကျန်းမာရေး", "health", "နေမကောင်း", "sick"):
+#             reason = "The sender has a health-related issue."
+#             cause_chain = "Health issue → work absence."
+#         elif has("မိသားစု", "family", "အမေ", "mother", "mom"):
+#             reason = "The sender has a family matter to attend to."
+#             cause_chain = "Family matter → work absence."
+
+#         if not reason:
+#             reason = "No specific reason was identified in the message."
+#             cause_chain = "Work absence stated without a clearly detected reason."
+
+#         return {
+#             "language": language,
+#             "intent": "Inform recipient that the sender will not come to work",
+#             "audience": "Colleague" if audience == "auto" else audience,
+#             "situation": "The sender will not be coming to work today.",
+#             "reason": reason,
+#             "main_action": "The sender will not come to work today.",
+#             "cause_chain": cause_chain,
+#             "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#         }
+
+#     # --------------------------------------------------------
+#     # Generic fallback
+#     # --------------------------------------------------------
+#     return {
+#         "language": language,
+#         "intent": "Translate the complete message naturally",
+#         "audience": audience if audience != "auto" else "Auto-detect",
+#         "situation": "Preserve the complete situation described by the sender.",
+#         "reason": "Not confidently detected by the deterministic understanding layer.",
+#         "main_action": "Translate the sender's complete message.",
+#         "cause_chain": "Preserve all meaningful clauses in the original message.",
+#         "recommended_tone": requested_tone if requested_tone in TONES else "professional",
+#     }
+
+
+# def format_understanding_for_prompt(understanding: dict[str, str]) -> str:
+#     return f"""
+# Complete semantic understanding:
+# - Language: {understanding["language"]}
+# - Intent: {understanding["intent"]}
+# - Situation: {understanding["situation"]}
+# - Reason: {understanding["reason"]}
+# - Main action/request: {understanding["main_action"]}
+# - Cause chain: {understanding["cause_chain"]}
+# - Audience: {understanding["audience"]}
+# """
+
+
+# # ============================================================
+# # Qwen Translation
+# # ============================================================
+
+# def generate_translation(
+#     text: str,
+#     tone: str,
+#     context: str = "general",
+#     audience: str = "auto",
+# ):
+#     """
+#     Generate natural English using Qwen.
+#     """
+
+#     if not text.strip():
+#         return ""
+
+#     system_prompt = """
+# You are MyanTone AI, a Myanmar-to-natural-English translation assistant.
+
+# Your ONLY job is to translate the user's COMPLETE message into natural English.
+# The input may be entirely Myanmar, entirely English, or a natural Myanmar-English mix.
+# Treat all three forms as valid input and preserve the meaning of the whole message.
+
+# CORE RULE: understand the whole message first, then express it naturally.
+# Do NOT translate word-by-word. Do NOT shorten a message when shortening
+# would remove meaningful context.
+
+# PRESERVE EVERY MEANINGFUL PART when present:
+# - who is involved
+# - what happened
+# - what the sender is doing
+# - what the sender wants the recipient to do
+# - reason/cause
+# - time/timing
+# - place/situation
+# - delay or expected change
+# - request, question, promise, or intention
+# - apology or other meaningful emotion
+
+# A translation can be one or more sentences if that is needed to preserve
+# the complete meaning.
+
+# Example:
+# "လမ်းမှာ ကားပိတ်နေလို့ ခနစောင့်ပေးပါ"
+# must preserve BOTH the traffic reason AND the request to wait.
+# Good: "I'm stuck in traffic right now, so please wait for me for a little while."
+# Bad: "Please wait a moment."
+
+# "traffic ကြောင့် ခန wait ပေးပါ" must also preserve BOTH traffic and waiting.
+
+# "ခန wait ပေးပါ" has no reason, so a short translation is appropriate:
+# "Could you please wait for me for a moment?"
+
+# Mixed English words such as meeting, manager, project, assignment, submit,
+# deadline, CV, interview, client, task, email, call, presentation, leave,
+# wait, traffic, update, file, work, and class are valid input.
+
+# IMPORTANT MEANING DISTINCTIONS:
+# - "မလာ" = not come / not go to a place
+# - "မတက်" = not attend / not join an event such as a meeting or class
+# - "တော့ဘူး" often = will no longer / won't
+# - "နိုင်ဘူး" = cannot / unable to
+# - "ချင်တယ်" = want to
+# - "မယ်" normally expresses future intention/action
+# - "လို့" can express a reason or an intended/reported statement depending on context
+# - "စောင့်" / "wait" = wait; never remove the waiting action
+# - traffic-related text is NOT automatically a "late for work" message; identify
+#   the actual action/request first.
+
+# DO NOT:
+# - answer the user's question
+# - explain the meaning
+# - summarize
+# - omit meaningful context
+# - invent facts
+# - add unsupported details
+# - change a request into a statement
+# - change "cannot" into "will not"
+# - change "not attending" into "cannot attend"
+
+# LONG / CONTEXT-RICH INPUT:
+# If the input contains several clauses, preserve ALL meaningful clauses. First identify
+# the situation, cause/reason, time, place, main action, consequence, and request/intention.
+# Then reconstruct them as natural English using connectors such as "because", "so",
+# "but", "and", or separate sentences when clearer.
+# Do not intentionally make the English shorter just to be concise.
+# Never let a final intent such as "I won't come to work" erase the earlier reason
+# that explains WHY the person will not come.
+# For example, "meeting ended late + didn't get enough sleep + won't come to work"
+# must keep all three ideas in the final translation.
+
+# TONE:
+# Simple = clear everyday English while preserving meaning.
+# Polite = respectful and courteous while preserving meaning.
+# Friendly = warm, natural, casual English while preserving meaning.
+# Professional = clear workplace-appropriate English while preserving meaning.
+# Formal = formal and respectful English while preserving meaning.
+
+# Return ONLY the final English translation. No analysis, labels, or explanations.
+# """
+
+
+#     understanding = build_ai_understanding(
+#         text=text,
+#         requested_tone=tone,
+#         audience=audience,
+#     )
+
+#     semantic_context = format_understanding_for_prompt(understanding)
+
+#     user_prompt = f"""
+# Translate this message into natural English.
+
+# Context: {context}
+# Audience: {audience}
+# Tone: {tone}
+
+# {semantic_context}
+
+# IMPORTANT:
+# The semantic understanding above is a guide, not a replacement for the
+# original message. Re-check the original text and preserve every meaningful
+# detail. In particular, NEVER drop a reason merely because the final intent
+# is easier to describe. If the original contains a cause -> consequence ->
+# action chain, keep that entire chain in the English translation.
+
+# Myanmar / mixed input:
+# {text}
+
+# English translation:
+# """
+
+
+#     try:
+#         messages = [
+#             {
+#                 "role": "system",
+#                 "content": system_prompt.strip(),
+#             },
+#             {
+#                 "role": "user",
+#                 "content": user_prompt.strip(),
+#             },
+#         ]
+
+#         prompt = tokenizer.apply_chat_template(
+#             messages,
+#             tokenize=False,
+#             add_generation_prompt=True,
+#         )
+
+#         inputs = tokenizer(
+#             prompt,
+#             return_tensors="pt",
+#             truncation=True,
+#             max_length=1024,
+#         )
+
+#         with torch.no_grad():
+#             outputs = model.generate(
+#                 **inputs,
+#                 max_new_tokens=180,
+#                 do_sample=False,
+#                 temperature=0.1,
+#                 top_p=0.9,
+#                 repetition_penalty=1.05,
+#                 pad_token_id=tokenizer.eos_token_id,
+#             )
+
+#         generated_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+
+#         result = tokenizer.decode(
+#             generated_tokens,
+#             skip_special_tokens=True,
+#         ).strip()
+
+#         # Remove accidental prefixes
+#         prefixes = [
+#             "English translation:",
+#             "Translation:",
+#             "Answer:",
+#         ]
+
+#         for prefix in prefixes:
+#             if result.lower().startswith(prefix.lower()):
+#                 result = result[len(prefix):].strip()
+
+#         # Preserve all generated lines. Long translations may naturally
+#         # contain multiple sentences; never keep only the first line.
+#         lines = [
+#             line.strip()
+#             for line in result.splitlines()
+#             if line.strip()
+#         ]
+
+#         if lines:
+#             result = " ".join(lines)
+
+#         if len(result) >= 2 and result[0] == result[-1] and result[0] in {'"', "'"}:
+#             result = result[1:-1].strip()
+
+#         return result
+
+#     except Exception as e:
+#         print("QWEN ERROR:", repr(e))
+#         return ""
+
+
+
+# # ============================================================
+# # API VERSION + DEBUG HELPERS
+# # ============================================================
+
+# def detect_debug_layer(text: str, tone: str) -> dict:
+#     """Explain which backend layer handles an input."""
+#     normalized = normalize_text(text)
+#     contextual = contextual_rule_translation(text, tone)
+#     reference = find_training_example(text)
+
+#     has_rain = _contains_any(normalized, [
+#         "မိုး", "မိုးရွာ", "မိုးကြီး", "မိုးသည်း", "rain", "raining", "heavy rain", "poured"
+#     ])
+#     has_flood = _contains_any(normalized, [
+#         "ရေလျှံ", "ရေတွေ လျှံ", "ရေကြီး", "ရေဝင်", "flood", "flooded", "flooding"
+#     ])
+#     has_traffic = _contains_any(normalized, [
+#         "ကားပိတ်", "ကားလမ်းပိတ်", "ကားကြပ်", "လမ်းပိတ်", "traffic", "traffic jam", "heavy traffic"
+#     ])
+#     has_delay = _contains_any(normalized, [
+#         "နောက်ကျ", "နောက်ကျမယ်", "late", "delayed", "delay"
+#     ])
+#     has_school = _contains_any(normalized, ["ကျောင်း", "school"])
+#     has_work = _contains_any(normalized, ["အလုပ်", "work", "office"])
+#     has_meeting = _contains_any(normalized, ["meeting", "အစည်းအဝေး"])
+#     has_wait = _contains_any(normalized, ["စောင့်", "wait", "wait for me"])
+#     cause_count = sum([has_rain, has_flood, has_traffic])
+
+#     if contextual is not None:
+#         layer = "contextual_rule"
+#     elif reference is not None:
+#         layer = "reference_dataset"
+#     else:
+#         layer = "qwen"
+
+#     return {
+#         "api_version": API_VERSION,
+#         "api_build": API_BUILD,
+#         "backend_model": MODEL_NAME,
+#         "backend_device": "cpu",
+#         "translation_layer": layer,
+#         "contextual_rule_matched": contextual is not None,
+#         "reference_example_matched": reference is not None,
+#         "qwen_fallback_expected": contextual is None and reference is None,
+#         "normalized_input": normalized,
+#         "detected": {
+#             "rain": has_rain,
+#             "flooding": has_flood,
+#             "traffic": has_traffic,
+#             "delay": has_delay,
+#             "school": has_school,
+#             "work": has_work,
+#             "meeting": has_meeting,
+#             "wait_request": has_wait,
+#             "environmental_or_transport_causes": cause_count,
+#         },
+#         "warning": (
+#             "Multiple causes detected. Compound-context rule must run before single-cause rules."
+#             if cause_count >= 2 else
+#             "No multi-cause weather/traffic combination detected."
+#         ),
+#     }
+
+
+# # ============================================================
+# # Response helper
+# # ============================================================
+
+# def understanding_response_fields(
+#     text: str,
+#     tone: str,
+#     audience: str,
+# ) -> dict[str, str]:
+#     u = build_ai_understanding(
+#         text=text,
+#         requested_tone=tone,
+#         audience=audience,
+#     )
+#     return {
+#         "api_version": API_VERSION,
+#         "debug": detect_debug_layer(text, tone),
+#         "language": u["language"],
+#         "intent": u["intent"],
+#         "audience_detected": u["audience"],
+#         "situation": u["situation"],
+#         "reason": u["reason"],
+#         "main_action": u["main_action"],
+#         "cause_chain": u["cause_chain"],
+#         "recommended_tone": u["recommended_tone"],
+#     }
+
+
+# # ============================================================
+# # Root endpoint
+# # ============================================================
+
+# @app.get("/")
+# def root():
+#     return {
+#         "message": "MyanTone AI API is running.",
+#         "api_version": API_VERSION,
+#         "api_build": API_BUILD,
+#         "features": ["translation", "complete-meaning-understanding", "tone-control", "debug", "test-context"],
+#         "model": MODEL_NAME,
+#         "device": "cpu",
+#         "training_examples": len(TRAINING_EXAMPLES),
+#         "tones": TONES,
+#     }
+
+
+# # ============================================================
+# # Health endpoint
+# # ============================================================
+
+# @app.get("/health")
+# def health():
+#     return {
+#         "status": "ok",
+#         "api_version": API_VERSION,
+#         "api_build": API_BUILD,
+#         "model": MODEL_NAME,
+#         "device": "cpu",
+#         "training_examples": len(TRAINING_EXAMPLES),
+#     }
+
+
+# # ============================================================
+# # Dataset endpoint
+# # ============================================================
+
+# @app.get("/dataset")
+# def dataset():
+#     """
+#     Return the 100 reference/training examples.
+#     """
+
+#     return {
+#         "count": len(TRAINING_EXAMPLES),
+#         "examples": TRAINING_EXAMPLES,
+#     }
+
+
+
+# # ============================================================
+# # Context diagnostic endpoint
+# # ============================================================
+
+# @app.post("/test-context")
+# def test_context(request: TranslateRequest):
+#     """Development endpoint for verifying backend version and context routing."""
+#     text = request.text.strip()
+#     if not text:
+#         return {
+#             "ok": False,
+#             "api_version": API_VERSION,
+#             "api_build": API_BUILD,
+#             "error": "text is required",
+#         }
+
+#     requested_tone = request.tone.lower().strip()
+#     if requested_tone not in TONES:
+#         requested_tone = "professional"
+
+#     debug = detect_debug_layer(text, requested_tone)
+#     understanding = build_ai_understanding(
+#         text=text,
+#         requested_tone=requested_tone,
+#         audience=request.audience,
+#     )
+
+#     all_tones = {}
+#     for tone_name in TONES:
+#         contextual = contextual_rule_translation(text, tone_name)
+#         if contextual is not None:
+#             all_tones[tone_name] = contextual
+#         else:
+#             reference = rule_based_translation(text, tone_name)
+#             if reference is not None:
+#                 all_tones[tone_name] = reference
+#             else:
+#                 all_tones[tone_name] = generate_translation(
+#                     text=text,
+#                     tone=tone_name,
+#                     context=request.context,
+#                     audience=request.audience,
+#                 )
+
+#     selected = all_tones.get(requested_tone, all_tones.get("professional", ""))
+
+#     return {
+#         "ok": True,
+#         "api_version": API_VERSION,
+#         "api_build": API_BUILD,
+#         "input": text,
+#         "selected_tone": requested_tone,
+#         "debug": debug,
+#         "understanding": understanding,
+#         "translations": all_tones,
+#         "selected_translation": selected,
+#         "frontend_check": {
+#             "expected_compound_context": debug["detected"]["environmental_or_transport_causes"] >= 2,
+#             "backend_is_new_version": API_VERSION == "2.2.0-complete-context-debug",
+#             "selected_layer": debug["translation_layer"],
+#         },
+#     }
+
+
+# # ============================================================
+# # Complete AI Understanding endpoint
+# # ============================================================
+
+# @app.post("/analyze")
+# def analyze(request: TranslateRequest):
+#     """
+#     Return the complete semantic interpretation used by MyanTone AI.
+#     This endpoint is intended for the frontend's AI Understanding panel.
+#     """
+#     text = request.text.strip()
+
+#     if not text:
+#         return {
+#             "language": "",
+#             "intent": "",
+#             "audience": "",
+#             "situation": "",
+#             "reason": "",
+#             "main_action": "",
+#             "cause_chain": "",
+#             "recommended_tone": "",
+#         }
+
+#     tone = request.tone.lower().strip()
+#     if tone not in TONES:
+#         tone = "professional"
+
+#     return build_ai_understanding(
+#         text=text,
+#         requested_tone=tone,
+#         audience=request.audience,
+#     )
+
+
+# # ============================================================
+# # Translate endpoint
+# # ============================================================
+
+# @app.post("/translate", response_model=TranslateResponse)
+# def translate(request: TranslateRequest):
+
+#     text = request.text.strip()
+
+#     if not text:
+#         return TranslateResponse(
+#             translation="",
+#             translations={},
+#         )
+
+#     # --------------------------------------------------------
+#     # Validate tone
+#     # --------------------------------------------------------
+
+#     tone = request.tone.lower().strip()
+
+#     if tone not in TONES:
+#         tone = "professional"
+
+#     # --------------------------------------------------------
+#     # 1. Context-aware rules first
+#     # --------------------------------------------------------
+#     contextual_translation = contextual_rule_translation(text, tone)
+
+#     if contextual_translation is not None:
+#         print("=" * 60)
+#         print("CONTEXT-AWARE RULE MATCH")
+#         print("INPUT:", text)
+#         print("TONE:", tone)
+#         print("RESULT:", contextual_translation)
+#         print("=" * 60)
+#         return TranslateResponse(
+#             translation=contextual_translation,
+#             translations={tone: contextual_translation},
+#             **understanding_response_fields(text, tone, request.audience),
+#         )
+
+#     # --------------------------------------------------------
+#     # 1. Try the 100-example reference dataset first
+#     # --------------------------------------------------------
+
+#     rule_translation = rule_based_translation(
+#         text=text,
+#         tone=tone,
+#     )
+
+#     if rule_translation is not None:
+
+#         print("=" * 60)
+#         print("REFERENCE DATASET MATCH")
+#         print("INPUT:", text)
+#         print("TONE:", tone)
+#         print("RESULT:", rule_translation)
+#         print("=" * 60)
+
+#         return TranslateResponse(
+#             translation=rule_translation,
+#             translations={
+#                 tone: rule_translation,
+#             },
+#             **understanding_response_fields(text, tone, request.audience),
+#         )
+
+#     # --------------------------------------------------------
+#     # 2. Unknown sentence → Qwen
+#     # --------------------------------------------------------
+
+#     print("=" * 60)
+#     print("QWEN TRANSLATION")
+#     print("INPUT:", text)
+#     print("TONE:", tone)
+#     print("=" * 60)
+
+#     selected_translation = generate_translation(
+#         text=text,
+#         tone=tone,
+#         context=request.context,
+#         audience=request.audience,
+#     )
+
+#     # --------------------------------------------------------
+#     # 3. Safety fallback
+#     # --------------------------------------------------------
+
+#     if not selected_translation:
+#         selected_translation = (
+#             "Sorry, I couldn't generate a translation "
+#             "for this message."
+#         )
+
+#     return TranslateResponse(
+#         translation=selected_translation,
+#         translations={
+#             tone: selected_translation,
+#         },
+#         **understanding_response_fields(text, tone, request.audience),
+#     )
+
+
+# # ============================================================
+# # Generate all 5 tones
+# # ============================================================
+
+# @app.post("/translate-all")
+# def translate_all(request: TranslateRequest):
+
+#     text = request.text.strip()
+
+#     if not text:
+#         return {
+#             "translation": "",
+#             "translations": {},
+#         }
+
+#     results = {}
+
+#     # Preserve reason + action for high-confidence contextual messages.
+#     if contextual_rule_translation(text, "professional") is not None:
+#         for tone in TONES:
+#             results[tone] = contextual_rule_translation(text, tone)
+
+#         selected_tone = request.tone.lower().strip()
+#         if selected_tone not in TONES:
+#             selected_tone = "professional"
+
+#         return {
+#             "translation": results[selected_tone],
+#             "translations": results,
+#             "understanding": understanding_response_fields(
+#                 text, selected_tone, request.audience
+#             ),
+#         }
+
+
+#     # First check the 100 examples
+#     example = find_training_example(text)
+
+#     if example:
+
+#         for tone in TONES:
+#             results[tone] = example[tone]
+
+#         selected_tone = request.tone.lower().strip()
+#         if selected_tone not in TONES:
+#             selected_tone = "professional"
+
+#         return {
+#             "translation": results[selected_tone],
+#             "translations": results,
+#             "understanding": understanding_response_fields(
+#                 text, selected_tone, request.audience
+#             ),
+#         }
+
+#     # Otherwise generate each tone using Qwen
+#     for tone in TONES:
+
+#         result = generate_translation(
+#             text=text,
+#             tone=tone,
+#             context=request.context,
+#             audience=request.audience,
+#         )
+
+#         if not result:
+#             result = "Unable to generate translation."
+
+#         results[tone] = result
+
+#     selected_tone = request.tone.lower().strip()
+
+#     if selected_tone not in TONES:
+#         selected_tone = "professional"
+
+#     return {
+#         "translation": results[selected_tone],
+#         "translations": results,
+#         "understanding": understanding_response_fields(
+#             text, selected_tone, request.audience
+#         ),
+#     }
+
+
+# # ============================================================
+# # Run with:
+# #
+# # uvicorn api:app --reload --port 8000
+# # ============================================================
+
+# if __name__ == "__main__":
+
+#     import uvicorn
+
+#     uvicorn.run(
+#         "api:app",
+#         host="127.0.0.1",
+#         port=8000,
+#         reload=True,
+#     )
+
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -61,11 +2603,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-        "https://myan-tone-ai.vercel.app",
     ],
-
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2195,6 +4733,7 @@ FULL_MESSAGE_EXAMPLES = [{'input': 'ဒီနေ့ မနက် traffic အရ�
   'formal': 'Owing to the power interruption and the complete depletion of my laptop battery, the report cannot be '
             'continued at present. In view of tonight’s deadline, I shall resume work upon restoration of power and '
             'submit the final version.'},
+            
  {'input': 'မနေ့ညက client နဲ့ meeting က အချိန်တော်တော်ကြာသွားပြီး meeting ပြီးတော့ သူတို့တောင်းထားတဲ့ changes တွေကို '
            'ပြန်လုပ်ရလို့ အိမ်ပြန်ရောက်တာ အရမ်းနောက်ကျသွားတယ်၊ အိပ်ရာဝင်တာလည်း မနက်တော်တော်နီးမှဖြစ်တာကြောင့် ဒီနေ့ '
            'အိပ်ရေးမဝဘဲ အရမ်းပင်ပန်းနေပါတယ်၊ ဒါကြောင့် ဒီနေ့ အလုပ်ကနေ တစ်ရက်ခွင့်ယူချင်ပါတယ်။',
@@ -2214,1209 +4753,8 @@ FULL_MESSAGE_EXAMPLES = [{'input': 'ဒီနေ့ မနက် traffic အရ�
   'formal': 'Owing to the extended duration of the client meeting and the subsequent completion of the requested '
             'revisions, I returned home at a considerably late hour and retired close to morning. Consequently, I have '
             'obtained insufficient rest and am significantly fatigued; accordingly, I respectfully request one day of '
-            'leave today.'},
+            'leave today.'}]
 
-    # ========================================================
-    # 101. Work: late due to oversleeping
-    # ========================================================
-    {
-        "input": "မနေ့ညက အိပ်ရေးဝဝအိပ်လိုက်ပေမယ့် နှိုးစက်မလုပ်လို့ ဒီနေ့ ရုံးနောက်ကျမယ်။",
-        "simple": "I overslept because my alarm didn't go off, so I'll be late to the office today.",
-        "polite": "I'm sorry, but my alarm didn't go off this morning, so I'll be a little late to the office today.",
-        "friendly": "My alarm didn't go off, so I overslept and I'll be a bit late to the office today.",
-        "professional": "My alarm failed to go off this morning, so I will be slightly late to the office today.",
-        "formal": "I regret to inform you that my alarm did not activate this morning, and I will therefore be delayed in arriving at the office today.",
-    },
-
-    # ========================================================
-    # 102. Work: late due to childcare
-    # ========================================================
-    {
-        "input": "ကလေးကို ကျောင်းလိုက်ပို့ရမှာဖြစ်လို့ ဒီနေ့ အလုပ်နောက်ကျမယ်။",
-        "simple": "I have to take my child to school, so I'll be late for work today.",
-        "polite": "I'm sorry, but I need to take my child to school, so I'll be late for work today.",
-        "friendly": "I've got to drop my kid off at school, so I'll be a bit late for work today.",
-        "professional": "I need to take my child to school this morning, so I will be slightly late for work today.",
-        "formal": "As I am required to transport my child to school this morning, I will be delayed in arriving at work today.",
-    },
-
-    # ========================================================
-    # 103. Work: leaving early for appointment
-    # ========================================================
-    {
-        "input": "ဒီနေ့ ညနေမှာ ဆရာဝန် appointment ရှိလို့ အလုပ်ကို နည်းနည်းစောပြီး ထွက်ရမယ်။",
-        "simple": "I have a doctor's appointment this afternoon, so I need to leave work a little early today.",
-        "polite": "I have a doctor's appointment this afternoon, so may I please leave work a little early today?",
-        "friendly": "I've got a doctor's appointment this afternoon, so I'll need to head out a bit early today.",
-        "professional": "I have a medical appointment this afternoon and will need to leave work slightly early today.",
-        "formal": "As I have a scheduled medical appointment this afternoon, I respectfully request permission to leave work slightly early today.",
-    },
-
-    # ========================================================
-    # 104. Work: working from home today
-    # ========================================================
-    {
-        "input": "ဒီနေ့ အိမ်ကနေ အလုပ်လုပ်မယ်၊ ရုံးကို မလာတော့ဘူး။",
-        "simple": "I'll work from home today and won't come to the office.",
-        "polite": "I'd like to work from home today, if that's okay, so I won't be coming to the office.",
-        "friendly": "I'm working from home today, so I won't be in the office.",
-        "professional": "I will be working from home today and will not be coming into the office.",
-        "formal": "I will be working remotely today and will therefore not be attending the office.",
-    },
-
-    # ========================================================
-    # 105. Work: need to leave for family reason
-    # ========================================================
-    {
-        "input": "မိသားစု အရေးပေါ်ကိစ္စရှိလို့ ဒီနေ့ အလုပ်ကနေ စောထွက်ရမယ်။",
-        "simple": "There's a family emergency, so I need to leave work early today.",
-        "polite": "I'm sorry, but there's a family emergency, so I need to leave work early today.",
-        "friendly": "Something urgent came up with my family, so I'll need to leave work early today.",
-        "professional": "Due to an urgent family matter, I will need to leave work early today.",
-        "formal": "Owing to an urgent family matter, I respectfully request permission to leave work early today.",
-    },
-
-    # ========================================================
-    # 106. Work: forgot to submit report
-    # ========================================================
-    {
-        "input": "report ကို မနေ့က submit လုပ်ဖို့ မေ့သွားတယ်၊ ဒီနေ့ ချက်ချင်း ပို့ပါမယ်။",
-        "simple": "I forgot to submit the report yesterday. I'll send it right away today.",
-        "polite": "I'm sorry, I forgot to submit the report yesterday. I'll send it right away today.",
-        "friendly": "I forgot to submit the report yesterday — I'll get it over to you right away today.",
-        "professional": "I overlooked submitting the report yesterday. I will send it immediately today.",
-        "formal": "I regret that I failed to submit the report yesterday. I will forward it without delay today.",
-    },
-
-    # ========================================================
-    # 107. Work: system error blocking task
-    # ========================================================
-    {
-        "input": "system error ဖြစ်နေလို့ task ကို ဆက်လုပ်လို့မရသေးဘူး၊ IT team ကို အကြောင်းကြားထားပြီ။",
-        "simple": "A system error is blocking the task, so I can't continue yet. I've already informed the IT team.",
-        "polite": "I'm sorry, but a system error is blocking the task, so I can't continue yet. I've already informed the IT team.",
-        "friendly": "The system's throwing an error, so I'm stuck on the task. I've already pinged the IT team.",
-        "professional": "A system error is currently preventing me from continuing the task. I have already notified the IT team.",
-        "formal": "A system error is presently impeding progress on the task. The IT team has been duly notified.",
-    },
-
-    # ========================================================
-    # 108. Work: waiting for manager approval
-    # ========================================================
-    {
-        "input": "manager approval မရသေးလို့ ဒီ task ကို ဆက်လုပ်လို့မရသေးဘူး။",
-        "simple": "I haven't received the manager's approval yet, so I can't continue this task.",
-        "polite": "I'm still waiting for the manager's approval, so I'm unable to continue this task yet.",
-        "friendly": "I'm still waiting on the manager's approval, so I can't move forward with this task yet.",
-        "professional": "The manager's approval is still pending, so I am unable to proceed with this task.",
-        "formal": "As the manager's approval has not yet been received, I am unable to proceed with this task at present.",
-    },
-
-    # ========================================================
-    # 109. Work: colleague is covering
-    # ========================================================
-    {
-        "input": "ဒီနေ့ ကျွန်တော် ခွင့်ယူမယ်၊ ကျွန်တော့်အလုပ်ကို ကိုအောင်က ကြည့်ပေးမယ်။",
-        "simple": "I'll be on leave today, and Ko Aung will cover my work.",
-        "polite": "I'll be on leave today, and Ko Aung has kindly agreed to cover my work.",
-        "friendly": "I'm taking the day off today, and Ko Aung's covering for me.",
-        "professional": "I will be on leave today, and Ko Aung will handle my responsibilities.",
-        "formal": "I will be on leave today, and Ko Aung has been designated to assume my duties.",
-    },
-
-    # ========================================================
-    # 110. Work: overtime tonight
-    # ========================================================
-    {
-        "input": "deadline နီးလာလို့ ဒီနေ့ည overtime လုပ်ရမယ်။",
-        "simple": "The deadline is close, so I'll have to work overtime tonight.",
-        "polite": "The deadline is approaching, so I'll need to work overtime tonight.",
-        "friendly": "The deadline's coming up, so I'll be working late tonight.",
-        "professional": "As the deadline is approaching, I will need to work overtime tonight.",
-        "formal": "Owing to the approaching deadline, I will be required to work overtime this evening.",
-    },
-
-    # ========================================================
-    # 111. Work: late due to car trouble
-    # ========================================================
-    {
-        "input": "ကား ပျက်သွားလို့ ဒီနေ့ အလုပ်နောက်ကျမယ်။",
-        "simple": "My car broke down, so I'll be late for work today.",
-        "polite": "I'm sorry, but my car broke down, so I'll be late for work today.",
-        "friendly": "My car broke down, so I'm going to be a bit late for work today.",
-        "professional": "My car has broken down, so I will be slightly late for work today.",
-        "formal": "Owing to a vehicle breakdown, I will be delayed in arriving at work today.",
-    },
-
-    # ========================================================
-    # 112. Work: bus strike
-    # ========================================================
-    {
-        "input": "ဘတ်စ်ကား သပိတ်မှောက်နေလို့ အလုပ်သွားဖို့ အခက်အခဲရှိတယ်။",
-        "simple": "The buses are on strike, so it's hard for me to get to work.",
-        "polite": "I'm sorry, but the buses are on strike, so it's difficult for me to get to work today.",
-        "friendly": "The buses are on strike, so getting to work is going to be tricky today.",
-        "professional": "Due to a bus strike, I am experiencing difficulty commuting to work today.",
-        "formal": "Owing to the ongoing bus strike, I am experiencing considerable difficulty in commuting to work today.",
-    },
-
-    # ========================================================
-    # 113. Work: forgot ID badge
-    # ========================================================
-    {
-        "input": "ID card မေ့ကျန်ခဲ့လို့ office ထဲဝင်ဖို့ အခက်အခဲရှိနေတယ်။",
-        "simple": "I forgot my ID card, so I'm having trouble getting into the office.",
-        "polite": "I'm sorry, but I forgot my ID card, so I'm having a little trouble getting into the office.",
-        "friendly": "I left my ID card at home, so I'm stuck outside the office right now.",
-        "professional": "I have forgotten my ID card and am currently experiencing difficulty entering the office.",
-        "formal": "As I have inadvertently left my identification card at home, I am presently unable to gain entry to the office.",
-    },
-
-    # ========================================================
-    # 114. Work: had to attend emergency call
-    # ========================================================
-    {
-        "input": "အရေးပေါ် phone call ဝင်လာလို့ meeting ကို ခဏထွက်ရမယ်။",
-        "simple": "I got an emergency call, so I need to step out of the meeting for a moment.",
-        "polite": "I'm sorry, but I received an emergency call and need to step out of the meeting for a moment.",
-        "friendly": "I just got an emergency call, so I'll need to step out of the meeting for a bit.",
-        "professional": "I have received an urgent call and will need to briefly step out of the meeting.",
-        "formal": "Owing to an urgent telephone call, I will be required to excuse myself briefly from the meeting.",
-    },
-
-    # ========================================================
-    # 115. Work: late due to road construction
-    # ========================================================
-    {
-        "input": "လမ်းပြင်နေလို့ traffic အရမ်းပိတ်နေတယ်၊ အလုပ်နောက်ကျမယ်။",
-        "simple": "The road is under construction and traffic is very heavy, so I'll be late for work.",
-        "polite": "I'm sorry, but the road is under construction and traffic is very heavy, so I'll be late for work.",
-        "friendly": "They're doing road work and traffic is awful, so I'll be late for work.",
-        "professional": "Road construction is causing heavy traffic, so I will be late for work.",
-        "formal": "Owing to road construction and resulting traffic congestion, I will be delayed in arriving at work.",
-    },
-
-    # ========================================================
-    # 116. Work: need to pick up sick child
-    # ========================================================
-    {
-        "input": "ကလေး နေမကောင်းလို့ ကျောင်းကနေ လိုက်ခေါ်ရမယ်၊ ဒီနေ့ အလုပ်ကနေ စောထွက်မယ်။",
-        "simple": "My child is sick, so I need to pick them up from school. I'll leave work early today.",
-        "polite": "I'm sorry, but my child is sick and I need to pick them up from school, so I'll leave work early today.",
-        "friendly": "My kid's sick, so I've got to pick them up from school and I'll be leaving work early today.",
-        "professional": "My child is unwell and requires collection from school, so I will need to leave work early today.",
-        "formal": "As my child is unwell and requires collection from school, I respectfully request permission to leave work early today.",
-    },
-
-    # ========================================================
-    # 117. Work: salary slip request
-    # ========================================================
-    {
-        "input": "ဒီလ salary slip ကို ပို့ပေးလို့ရမလား။",
-        "simple": "Could you send me this month's salary slip?",
-        "polite": "Could you please send me this month's salary slip?",
-        "friendly": "Can you send me this month's salary slip?",
-        "professional": "Could you please provide me with this month's salary slip?",
-        "formal": "I would appreciate it if you could kindly provide me with this month's salary slip.",
-    },
-
-    # ========================================================
-    # 118. Work: request for training
-    # ========================================================
-    {
-        "input": "ဒီ training ကို တက်ချင်တယ်၊ approve လုပ်ပေးလို့ရမလား။",
-        "simple": "I'd like to attend this training. Could you approve it?",
-        "polite": "I'd like to attend this training. Would it be possible for you to approve it?",
-        "friendly": "I'd love to join this training — can you approve it?",
-        "professional": "I would like to attend this training. Could you please approve my request?",
-        "formal": "I would like to request approval to attend this training programme.",
-    },
-
-    # ========================================================
-    # 119. Work: reporting a mistake
-    # ========================================================
-    {
-        "input": "ကျွန်တော် မှားလိုက်တဲ့အပိုင်းကို ပြန်ပြင်ပြီးပါပြီ၊ တောင်းပန်ပါတယ်။",
-        "simple": "I've fixed the part I got wrong. I'm sorry about that.",
-        "polite": "I've corrected the part I got wrong. I'm sorry for the mistake.",
-        "friendly": "I've fixed the part I messed up — sorry about that.",
-        "professional": "I have corrected the error I made. I apologize for the oversight.",
-        "formal": "I have rectified the error in question and offer my sincere apologies for the oversight.",
-    },
-
-    # ========================================================
-    # 120. Work: handover before leave
-    # ========================================================
-    {
-        "input": "မနက်ဖြန် ခွင့်ယူမယ်၊ ဒီနေ့ handover လုပ်ထားခဲ့မယ်။",
-        "simple": "I'll be on leave tomorrow, so I'll do the handover today.",
-        "polite": "I'll be on leave tomorrow, so I'd like to complete the handover today.",
-        "friendly": "I'm off tomorrow, so I'll hand everything over today.",
-        "professional": "As I will be on leave tomorrow, I will complete the handover today.",
-        "formal": "As I will be on leave tomorrow, I will ensure that a thorough handover is completed today.",
-    },
-
-    # ========================================================
-    # 121. School: late due to bus
-    # ========================================================
-    {
-        "input": "ဘတ်စ်ကား နောက်ကျနေလို့ ကျောင်းနောက်ကျမယ်။",
-        "simple": "The bus is late, so I'll be late for school.",
-        "polite": "I'm sorry, but the bus is late, so I'll be late for school.",
-        "friendly": "The bus is running late, so I'll be a bit late for school.",
-        "professional": "The bus is delayed, so I will be late for school.",
-        "formal": "Owing to a delay in the bus service, I will be late in arriving at school.",
-    },
-
-    # ========================================================
-    # 122. School: forgot assignment at home
-    # ========================================================
-    {
-        "input": "assignment ကို အိမ်မှာ မေ့ကျန်ခဲ့တယ်၊ မနက်ဖြန် ယူလာပါမယ်။",
-        "simple": "I left my assignment at home. I'll bring it tomorrow.",
-        "polite": "I'm sorry, I left my assignment at home. I'll bring it tomorrow.",
-        "friendly": "I forgot my assignment at home — I'll bring it in tomorrow.",
-        "professional": "I inadvertently left my assignment at home. I will submit it tomorrow.",
-        "formal": "I regret that I inadvertently left my assignment at home. I will submit it tomorrow without fail.",
-    },
-
-    # ========================================================
-    # 123. School: requesting extension
-    # ========================================================
-    {
-        "input": "ဒီ assignment အတွက် deadline နည်းနည်းတိုးပေးလို့ရမလား။",
-        "simple": "Could I get a small extension on this assignment?",
-        "polite": "Would it be possible to get a small extension on this assignment, please?",
-        "friendly": "Any chance I could get a little more time on this assignment?",
-        "professional": "I would like to request a short extension for this assignment.",
-        "formal": "I respectfully request a brief extension of the deadline for this assignment.",
-    },
-
-    # ========================================================
-    # 124. School: group member absent
-    # ========================================================
-    {
-        "input": "group member တစ်ယောက် မလာနိုင်လို့ ကျွန်တော်တို့အဖွဲ့ meeting ရွှေ့ရမယ်။",
-        "simple": "One of our group members can't come, so we need to move our group meeting.",
-        "polite": "One of our group members can't make it, so we'd like to move our group meeting.",
-        "friendly": "One of our group members can't come, so we need to shift our meeting.",
-        "professional": "As one of our group members is unavailable, we need to reschedule our group meeting.",
-        "formal": "Owing to the unavailability of one of our group members, it will be necessary to reschedule our group meeting.",
-    },
-
-    # ========================================================
-    # 125. School: exam clash
-    # ========================================================
-    {
-        "input": "exam နှစ်ခု အချိန်တိုက်နေလို့ ဆရာ့ကို မေးကြည့်ချင်တယ်။",
-        "simple": "Two of my exams are at the same time, so I'd like to ask the teacher about it.",
-        "polite": "Two of my exams clash, so I'd like to ask the teacher about it, please.",
-        "friendly": "Two of my exams overlap — I want to check with the teacher about it.",
-        "professional": "Two of my examinations are scheduled at the same time, so I would like to consult the instructor.",
-        "formal": "As two of my examinations are scheduled concurrently, I would like to seek the instructor's guidance on the matter.",
-    },
-
-    # ========================================================
-    # 126. School: late submission
-    # ========================================================
-    {
-        "input": "report ကို late submit လုပ်မိတဲ့အတွက် တောင်းပန်ပါတယ်။",
-        "simple": "I'm sorry for submitting the report late.",
-        "polite": "I'm sorry for submitting the report late. I hope you can understand.",
-        "friendly": "Sorry the report's late — that's on me.",
-        "professional": "I apologize for the late submission of the report.",
-        "formal": "I sincerely apologize for the delayed submission of the report.",
-    },
-
-    # ========================================================
-    # 127. School: missed lecture
-    # ========================================================
-    {
-        "input": "မနေ့က lecture မတက်နိုင်လို့ notes ပို့ပေးလို့ရမလား။",
-        "simple": "I couldn't attend yesterday's lecture. Could you send me the notes?",
-        "polite": "I couldn't attend yesterday's lecture. Would you mind sending me the notes?",
-        "friendly": "I missed yesterday's lecture — can you send me the notes?",
-        "professional": "I was unable to attend yesterday's lecture. Could you please share the notes with me?",
-        "formal": "As I was unable to attend yesterday's lecture, I would appreciate it if you could provide me with the notes.",
-    },
-
-    # ========================================================
-    # 128. School: library book
-    # ========================================================
-    {
-        "input": "library book ကို ပြန်အပ်ဖို့ နောက်ကျသွားလို့ fine ရှိမလား။",
-        "simple": "I'm late returning the library book. Will there be a fine?",
-        "polite": "I'm sorry, I'm late returning the library book. Will there be a fine?",
-        "friendly": "I'm late returning my library book — will I get fined?",
-        "professional": "I have returned the library book late. Could you please confirm whether a fine applies?",
-        "formal": "As I have returned the library book after the due date, I would like to enquire whether a fine is applicable.",
-    },
-
-    # ========================================================
-    # 129. School: need recommendation letter
-    # ========================================================
-    {
-        "input": "scholarship အတွက် recommendation letter ရေးပေးလို့ရမလား။",
-        "simple": "Could you write me a recommendation letter for the scholarship?",
-        "polite": "Would you be able to write me a recommendation letter for the scholarship, please?",
-        "friendly": "Any chance you could write me a recommendation letter for the scholarship?",
-        "professional": "I would like to request a recommendation letter in support of my scholarship application.",
-        "formal": "I respectfully request that you consider writing a letter of recommendation in support of my scholarship application.",
-    },
-
-    # ========================================================
-    # 130. School: tuition payment
-    # ========================================================
-    {
-        "input": "tuition fee ကို ဒီအပတ်အတွင်း ပေးချေပါမယ်။",
-        "simple": "I'll pay the tuition fee within this week.",
-        "polite": "I'll make sure to pay the tuition fee within this week.",
-        "friendly": "I'll get the tuition fee paid sometime this week.",
-        "professional": "I will settle the tuition fee within the course of this week.",
-        "formal": "I will ensure that the tuition fee is remitted within the course of this week.",
-    },
-
-    # ========================================================
-    # 131. School: club activity
-    # ========================================================
-    {
-        "input": "ဒီနေ့ club activity ရှိလို့ ကျောင်းပြီးရင် နည်းနည်းနောက်ကျမှ အိမ်ပြန်မယ်။",
-        "simple": "I have a club activity today, so I'll get home a little late after school.",
-        "polite": "I have a club activity today, so I'll be getting home a little late after school.",
-        "friendly": "I've got a club thing today, so I'll be home a bit late after school.",
-        "professional": "I have a club activity scheduled today and will therefore return home later than usual after school.",
-        "formal": "As I have a scheduled club activity today, I will return home later than usual following the conclusion of school.",
-    },
-
-    # ========================================================
-    # 132. School: exam result query
-    # ========================================================
-    {
-        "input": "exam result ကို online မှာ ကြည့်လို့ရပြီလား။",
-        "simple": "Can I check the exam results online yet?",
-        "polite": "Could you please let me know if the exam results are available online yet?",
-        "friendly": "Are the exam results up online yet?",
-        "professional": "Could you please confirm whether the examination results are now accessible online?",
-        "formal": "I would appreciate confirmation as to whether the examination results are now available online.",
-    },
-
-    # ========================================================
-    # 133. School: presentation partner
-    # ========================================================
-    {
-        "input": "presentation အတွက် partner နဲ့ ဒီနေ့ည practice လုပ်မယ်။",
-        "simple": "I'll practice with my partner tonight for the presentation.",
-        "polite": "I'll be practising with my partner tonight for the presentation.",
-        "friendly": "I'm practising with my partner tonight for the presentation.",
-        "professional": "I will be rehearsing with my partner this evening in preparation for the presentation.",
-        "formal": "I will be rehearsing with my partner this evening in preparation for the forthcoming presentation.",
-    },
-
-    # ========================================================
-    # 134. School: leave for competition
-    # ========================================================
-    {
-        "input": "ကျောင်းကိုယ်စားပြု competition သွားရမှာဖြစ်လို့ သုံးရက် ခွင့်တောင်းချင်တယ်။",
-        "simple": "I have to attend a school competition, so I'd like to ask for three days off.",
-        "polite": "I have to attend a school competition, so I'd like to request three days of leave, please.",
-        "friendly": "I'm going to a school competition, so I need three days off.",
-        "professional": "As I will be representing the school at a competition, I would like to request three days of leave.",
-        "formal": "As I will be representing the school at an upcoming competition, I respectfully request three days of leave.",
-    },
-
-    # ========================================================
-    # 135. School: lab report
-    # ========================================================
-    {
-        "input": "lab report ကို မနက်ဖြန် မနက်မှ submit လုပ်လို့ရမလား။",
-        "simple": "Can I submit the lab report tomorrow morning?",
-        "polite": "Would it be possible to submit the lab report tomorrow morning, please?",
-        "friendly": "Can I hand in the lab report tomorrow morning?",
-        "professional": "Would it be acceptable to submit the lab report tomorrow morning?",
-        "formal": "I would like to enquire whether submission of the lab report tomorrow morning would be acceptable.",
-    },
-
-    # ========================================================
-    # 136. School: schedule change
-    # ========================================================
-    {
-        "input": "ဒီအပတ် class schedule ပြောင်းသွားလို့ အတန်းချိန် ပြန်စစ်ရမယ်။",
-        "simple": "The class schedule changed this week, so I need to check the class times again.",
-        "polite": "The class schedule has changed this week, so I'll need to check the class times again.",
-        "friendly": "The class schedule changed this week, so I've got to recheck my class times.",
-        "professional": "As the class schedule has been revised this week, I will need to reconfirm the class times.",
-        "formal": "Owing to a revision of the class schedule this week, it will be necessary to reconfirm the class times.",
-    },
-
-    # ========================================================
-    # 137. School: peer tutoring
-    # ========================================================
-    {
-        "input": "သူငယ်ချင်းကို math သင်ပေးနေတယ်၊ ဒါကြောင့် ဒီနေ့ library မှာ နေမယ်။",
-        "simple": "I'm helping my friend with math, so I'll be at the library today.",
-        "polite": "I'm helping my friend with math, so I'll be studying at the library today.",
-        "friendly": "I'm tutoring my friend in math, so I'll be hanging out at the library today.",
-        "professional": "I am assisting a friend with mathematics and will therefore be at the library today.",
-        "formal": "As I am providing academic assistance to a fellow student in mathematics, I will be at the library today.",
-    },
-
-    # ========================================================
-    # 138. School: thesis supervisor meeting
-    # ========================================================
-    {
-        "input": "thesis supervisor နဲ့ ဒီနေ့ ညနေ တွေ့ရမယ်။",
-        "simple": "I'm meeting my thesis supervisor this afternoon.",
-        "polite": "I have a meeting with my thesis supervisor this afternoon.",
-        "friendly": "I'm catching up with my thesis supervisor this afternoon.",
-        "professional": "I have a scheduled meeting with my thesis supervisor this afternoon.",
-        "formal": "I am scheduled to meet with my thesis supervisor this afternoon.",
-    },
-
-    # ========================================================
-    # 139. School: scholarship interview
-    # ========================================================
-    {
-        "input": "မနက်ဖြန် scholarship interview ရှိလို့ ဒီနေ့ည ပြင်ဆင်နေတယ်။",
-        "simple": "I have a scholarship interview tomorrow, so I'm preparing tonight.",
-        "polite": "I have a scholarship interview tomorrow, so I'll be preparing tonight.",
-        "friendly": "I've got a scholarship interview tomorrow, so I'm prepping tonight.",
-        "professional": "I have a scholarship interview scheduled for tomorrow and will therefore be preparing this evening.",
-        "formal": "As I have a scholarship interview scheduled for tomorrow, I will be devoting this evening to preparation.",
-    },
-
-    # ========================================================
-    # 140. School: absence for medical reason
-    # ========================================================
-    {
-        "input": "ဆရာဝန် appointment ကြောင့် မနက်ဖြန် class မတက်နိုင်ဘူး။",
-        "simple": "I have a doctor's appointment, so I can't attend class tomorrow.",
-        "polite": "I'm sorry, but I have a doctor's appointment, so I won't be able to attend class tomorrow.",
-        "friendly": "I've got a doctor's appointment, so I won't make it to class tomorrow.",
-        "professional": "Due to a medical appointment, I will be unable to attend class tomorrow.",
-        "formal": "Owing to a scheduled medical appointment, I will be unable to attend class tomorrow.",
-    },
-
-    # ========================================================
-    # 141. Meeting: reschedule due to conflict
-    # ========================================================
-    {
-        "input": "meeting က အခြား meeting နဲ့ တိုက်နေလို့ အချိန်ရွှေ့ပေးလို့ရမလား။",
-        "simple": "This meeting clashes with another one, so could we move it?",
-        "polite": "This meeting clashes with another one. Would it be possible to move it, please?",
-        "friendly": "This meeting overlaps with another — can we shift it?",
-        "professional": "This meeting conflicts with another commitment. Could we please reschedule it?",
-        "formal": "As this meeting conflicts with another previously scheduled commitment, I would appreciate it if it could be rescheduled.",
-    },
-
-    # ========================================================
-    # 142. Meeting: joining late
-    # ========================================================
-    {
-        "input": "အခု လမ်းပေါ်မှာရှိလို့ meeting ကို 10 မိနစ်လောက် နောက်ကျမှ join မယ်။",
-        "simple": "I'm on my way, so I'll join the meeting about 10 minutes late.",
-        "polite": "I'm currently on my way, so I'll join the meeting about 10 minutes late. Thank you for your understanding.",
-        "friendly": "I'm on the way — I'll hop into the meeting about 10 minutes late.",
-        "professional": "I am currently en route and will join the meeting approximately 10 minutes late.",
-        "formal": "I am presently en route and expect to join the meeting approximately 10 minutes after its commencement.",
-    },
-
-    # ========================================================
-    # 143. Meeting: online link issue
-    # ========================================================
-    {
-        "input": "meeting link က အလုပ်မလုပ်ဘူး၊ ပြန်ပို့ပေးလို့ရမလား။",
-        "simple": "The meeting link isn't working. Could you send it again?",
-        "polite": "The meeting link isn't working. Would you mind sending it again, please?",
-        "friendly": "The meeting link isn't working — can you resend it?",
-        "professional": "The meeting link appears to be non-functional. Could you please resend it?",
-        "formal": "The meeting link appears to be non-functional. I would appreciate it if you could kindly resend it.",
-    },
-
-    # ========================================================
-    # 144. Meeting: need minutes
-    # ========================================================
-    {
-        "input": "မနေ့က meeting minutes ကို ပို့ပေးလို့ရမလား။",
-        "simple": "Could you send me yesterday's meeting minutes?",
-        "polite": "Could you please send me yesterday's meeting minutes?",
-        "friendly": "Can you send me yesterday's meeting minutes?",
-        "professional": "Could you please forward yesterday's meeting minutes to me?",
-        "formal": "I would appreciate it if you could kindly provide me with a copy of yesterday's meeting minutes.",
-    },
-
-    # ========================================================
-    # 145. Meeting: agenda request
-    # ========================================================
-    {
-        "input": "မနက်ဖြန် meeting agenda ကို အရင် ပို့ပေးလို့ရမလား။",
-        "simple": "Could you send the agenda for tomorrow's meeting in advance?",
-        "polite": "Could you please send the agenda for tomorrow's meeting in advance?",
-        "friendly": "Can you send over tomorrow's meeting agenda ahead of time?",
-        "professional": "Could you please circulate the agenda for tomorrow's meeting in advance?",
-        "formal": "I would appreciate it if the agenda for tomorrow's meeting could be circulated in advance.",
-    },
-
-    # ========================================================
-    # 146. Meeting: need to leave early
-    # ========================================================
-    {
-        "input": "ဒီနေ့ meeting ကို စောထွက်ရမယ်၊ appointment ရှိလို့။",
-        "simple": "I'll need to leave today's meeting early because I have an appointment.",
-        "polite": "I'm sorry, but I'll need to leave today's meeting early because I have an appointment.",
-        "friendly": "I've got an appointment, so I'll have to duck out of today's meeting early.",
-        "professional": "Due to a prior appointment, I will need to leave today's meeting early.",
-        "formal": "Owing to a prior engagement, I will be required to leave today's meeting before its conclusion.",
-    },
-
-    # ========================================================
-    # 147. Meeting: follow-up questions
-    # ========================================================
-    {
-        "input": "meeting ပြီးရင် မေးစရာရှိလို့ ခဏနေပေးလို့ရမလား။",
-        "simple": "I have some questions after the meeting. Could you stay for a moment?",
-        "polite": "I have a few questions after the meeting. Could you please stay for a moment?",
-        "friendly": "I've got a couple of questions after the meeting — can you hang around for a bit?",
-        "professional": "I have some follow-up questions after the meeting. Would you be available to stay briefly?",
-        "formal": "I have several follow-up questions following the meeting. I would appreciate it if you could remain briefly.",
-    },
-
-    # ========================================================
-    # 148. Meeting: recording request
-    # ========================================================
-    {
-        "input": "meeting ကို record လုပ်ထားလို့ရမလား။",
-        "simple": "Is it okay if I record the meeting?",
-        "polite": "Would it be alright if I recorded the meeting?",
-        "friendly": "Mind if I record the meeting?",
-        "professional": "Would it be permissible for me to record the meeting?",
-        "formal": "I would like to enquire whether it would be permissible to record the meeting.",
-    },
-
-    # ========================================================
-    # 149. Meeting: technical difficulty
-    # ========================================================
-    {
-        "input": "meeting မှာ mic မအလုပ်လုပ်လို့ စာနဲ့ ပြောလိုက်မယ်။",
-        "simple": "My mic isn't working in the meeting, so I'll type my responses.",
-        "polite": "My microphone isn't working in the meeting, so I'll respond via chat instead.",
-        "friendly": "My mic's dead in the meeting, so I'll just type in chat.",
-        "professional": "My microphone is not functioning during the meeting, so I will communicate via the chat function.",
-        "formal": "As my microphone is not functioning during the meeting, I will communicate via the written chat facility.",
-    },
-
-    # ========================================================
-    # 150. Meeting: need more time
-    # ========================================================
-    {
-        "input": "meeting မှာ discuss လုပ်ဖို့ အချိန်နည်းနည်းပိုလိုတယ်။",
-        "simple": "We need a little more time to discuss this in the meeting.",
-        "polite": "Would it be possible to have a little more time to discuss this in the meeting?",
-        "friendly": "We could use a bit more time to go over this in the meeting.",
-        "professional": "Additional time is required to adequately discuss this matter during the meeting.",
-        "formal": "Further time is required in order to give the matter due consideration during the meeting.",
-    },
-
-    # ========================================================
-    # 151. Meeting: confirm attendance
-    # ========================================================
-    {
-        "input": "မနက်ဖြန် meeting တက်မယ်လို့ confirm လုပ်ချင်တယ်။",
-        "simple": "I'd like to confirm that I'll attend tomorrow's meeting.",
-        "polite": "I'd like to confirm that I will be attending tomorrow's meeting.",
-        "friendly": "Just confirming — I'll be at tomorrow's meeting.",
-        "professional": "I would like to confirm my attendance at tomorrow's meeting.",
-        "formal": "I would like to formally confirm my attendance at tomorrow's meeting.",
-    },
-
-    # ========================================================
-    # 152. Meeting: send deck
-    # ========================================================
-    {
-        "input": "meeting deck ကို အရင် ပို့ပေးလို့ရမလား။",
-        "simple": "Could you send me the meeting deck beforehand?",
-        "polite": "Could you please send me the meeting deck beforehand?",
-        "friendly": "Can you send the meeting deck over before we meet?",
-        "professional": "Could you please forward the meeting deck in advance?",
-        "formal": "I would appreciate it if the meeting deck could be forwarded in advance of the meeting.",
-    },
-
-    # ========================================================
-    # 153. Meeting: unable to join
-    # ========================================================
-    {
-        "input": "ဒီနေ့ meeting ကို join လို့မရနိုင်ဘူး၊ notes ပို့ပေးပါ။",
-        "simple": "I can't join today's meeting. Please send me the notes.",
-        "polite": "I'm sorry, but I won't be able to join today's meeting. Could you please send me the notes?",
-        "friendly": "I can't make today's meeting — can you send me the notes?",
-        "professional": "I will be unable to attend today's meeting. Please forward the notes to me.",
-        "formal": "I regret that I will be unable to attend today's meeting. I would appreciate it if the notes could be forwarded to me.",
-    },
-
-    # ========================================================
-    # 154. Meeting: post-meeting action
-    # ========================================================
-    {
-        "input": "meeting ပြီးရင် action items တွေကို စုပြီး ပို့ပေးမယ်။",
-        "simple": "After the meeting, I'll compile the action items and send them out.",
-        "polite": "After the meeting, I'll compile the action items and send them to you.",
-        "friendly": "Once the meeting's done, I'll gather up the action items and send them over.",
-        "professional": "Following the meeting, I will consolidate the action items and distribute them accordingly.",
-        "formal": "Upon conclusion of the meeting, I will compile the action items and circulate them accordingly.",
-    },
-
-    # ========================================================
-    # 155. Meeting: request to postpone
-    # ========================================================
-    {
-        "input": "ဒီနေ့ meeting ကို မနက်ဖြန်ရွှေ့လို့ရမလား။",
-        "simple": "Could we move today's meeting to tomorrow?",
-        "polite": "Would it be possible to move today's meeting to tomorrow, please?",
-        "friendly": "Can we push today's meeting to tomorrow?",
-        "professional": "Could we please reschedule today's meeting for tomorrow?",
-        "formal": "I would like to request that today's meeting be rescheduled for tomorrow.",
-    },
-
-    # ========================================================
-    # 156. Project: scope change
-    # ========================================================
-    {
-        "input": "project scope ပြောင်းသွားလို့ timeline ကို ပြန်စီစဉ်ရမယ်။",
-        "simple": "The project scope has changed, so we need to re-plan the timeline.",
-        "polite": "The project scope has changed, so we'll need to re-plan the timeline.",
-        "friendly": "The scope changed, so we've got to redo the timeline.",
-        "professional": "As the project scope has changed, the timeline will need to be revised.",
-        "formal": "Owing to a change in the project scope, it will be necessary to revise the timeline accordingly.",
-    },
-
-    # ========================================================
-    # 157. Project: resource shortage
-    # ========================================================
-    {
-        "input": "resource မလုံလောက်လို့ project ကို အချိန်မီ မပြီးနိုင်ဘူး။",
-        "simple": "We don't have enough resources, so we can't finish the project on time.",
-        "polite": "We don't have sufficient resources, so we may not be able to finish the project on time.",
-        "friendly": "We're short on resources, so finishing the project on time is going to be tough.",
-        "professional": "Due to insufficient resources, the project may not be completed within the required timeframe.",
-        "formal": "Owing to a shortage of resources, completion of the project within the stipulated timeframe may not be feasible.",
-    },
-
-    # ========================================================
-    # 158. Project: dependency delay
-    # ========================================================
-    {
-        "input": "အခြား team ကို depend လုပ်နေရလို့ ကျွန်တော်တို့အလုပ် နောက်ကျနေတယ်။",
-        "simple": "We're waiting on another team, so our work is delayed.",
-        "polite": "We're dependent on another team, so our work is being delayed.",
-        "friendly": "We're blocked by another team, so our work is running late.",
-        "professional": "Our work is delayed because we are awaiting deliverables from another team.",
-        "formal": "Our work has been delayed owing to our dependence on deliverables from another team.",
-    },
-
-    # ========================================================
-    # 159. Project: testing phase
-    # ========================================================
-    {
-        "input": "project က testing phase ရောက်နေပြီ၊ bug တွေ fix လုပ်နေတယ်။",
-        "simple": "The project is in the testing phase, and we're fixing bugs.",
-        "polite": "The project is currently in the testing phase, and we're fixing the bugs.",
-        "friendly": "We're in testing mode now — squashing bugs.",
-        "professional": "The project has entered the testing phase, and the team is currently resolving outstanding defects.",
-        "formal": "The project has progressed to the testing phase, during which identified defects are being rectified.",
-    },
-
-    # ========================================================
-    # 160. Project: deployment planned
-    # ========================================================
-    {
-        "input": "မနက်ဖြန် project ကို deploy လုပ်မယ်။",
-        "simple": "We'll deploy the project tomorrow.",
-        "polite": "We plan to deploy the project tomorrow.",
-        "friendly": "We're deploying the project tomorrow.",
-        "professional": "The project is scheduled for deployment tomorrow.",
-        "formal": "Deployment of the project is scheduled to take place tomorrow.",
-    },
-
-    # ========================================================
-    # 161. Project: post-mortem
-    # ========================================================
-    {
-        "input": "project ပြီးရင် post-mortem meeting လုပ်ကြမယ်။",
-        "simple": "After the project, we'll hold a post-mortem meeting.",
-        "polite": "Once the project is complete, we'll hold a post-mortem meeting.",
-        "friendly": "After the project wraps, let's do a post-mortem.",
-        "professional": "Following project completion, a post-mortem meeting will be conducted.",
-        "formal": "Upon conclusion of the project, a post-mortem review meeting will be convened.",
-    },
-
-    # ========================================================
-    # 162. Project: milestone reached
-    # ========================================================
-    {
-        "input": "ဒီ project milestone ကို အောင်မြင်စွာ ပြီးသွားပါပြီ။",
-        "simple": "We've successfully completed this project milestone.",
-        "polite": "I'm pleased to share that we've successfully completed this project milestone.",
-        "friendly": "Great news — we've hit this project milestone!",
-        "professional": "This project milestone has been successfully completed.",
-        "formal": "This project milestone has been duly and successfully completed.",
-    },
-
-    # ========================================================
-    # 163. Project: change request
-    # ========================================================
-    {
-        "input": "change request တစ်ခု လက်ခံရရှိထားလို့ impact ကို စစ်နေတယ်။",
-        "simple": "We've received a change request, so we're assessing the impact.",
-        "polite": "We've received a change request, so we're currently assessing its impact.",
-        "friendly": "A change request came in, so we're checking what it'll affect.",
-        "professional": "A change request has been received, and the impact is currently being assessed.",
-        "formal": "A change request has been received, and a formal impact assessment is presently underway.",
-    },
-
-    # ========================================================
-    # 164. Project: risk identified
-    # ========================================================
-    {
-        "input": "project မှာ risk တစ်ခု တွေ့ထားလို့ mitigation plan လိုတယ်။",
-        "simple": "We've identified a risk in the project, so we need a mitigation plan.",
-        "polite": "We've identified a risk in the project, so we'll need a mitigation plan.",
-        "friendly": "We spotted a risk in the project, so we need a plan to handle it.",
-        "professional": "A project risk has been identified, and a mitigation plan is required.",
-        "formal": "A risk has been identified in the project, necessitating the formulation of a mitigation plan.",
-    },
-
-    # ========================================================
-    # 165. Project: demo request
-    # ========================================================
-    {
-        "input": "client ကို project demo ပြဖို့ ရက်ချိန်းလိုတယ်။",
-        "simple": "We need to schedule a date to demo the project to the client.",
-        "polite": "We need to schedule a date to demo the project to the client, if that works for everyone.",
-        "friendly": "Let's lock in a date to show the client the project demo.",
-        "professional": "A date must be scheduled for the project demonstration to the client.",
-        "formal": "It will be necessary to arrange a date for the formal demonstration of the project to the client.",
-    },
-
-    # ========================================================
-    # 166. Project: documentation
-    # ========================================================
-    {
-        "input": "project documentation ကို update လုပ်နေတယ်။",
-        "simple": "I'm updating the project documentation.",
-        "polite": "I'm currently updating the project documentation.",
-        "friendly": "I'm working on updating the project docs.",
-        "professional": "I am currently updating the project documentation.",
-        "formal": "I am presently engaged in the revision of the project documentation.",
-    },
-
-    # ========================================================
-    # 167. Project: budget concern
-    # ========================================================
-    {
-        "input": "project budget ကျော်နိုင်တဲ့အနေအထားရှိလို့ ပြန်စစ်ဖို့ လိုတယ်။",
-        "simple": "The project might go over budget, so we need to review it.",
-        "polite": "The project may exceed its budget, so we'll need to review it.",
-        "friendly": "The project could bust the budget, so we should review it.",
-        "professional": "There is a risk that the project will exceed its budget, and a review is therefore required.",
-        "formal": "As there is a possibility that the project may exceed its allocated budget, a review is required.",
-    },
-
-    # ========================================================
-    # 168. Project: vendor delay
-    # ========================================================
-    {
-        "input": "vendor က ပစ္စည်း နောက်ကျမှ ပို့မယ်လို့ ပြောထားလို့ project နောက်ကျနိုင်တယ်။",
-        "simple": "The vendor said the materials will be late, so the project might be delayed.",
-        "polite": "The vendor has advised that the materials will be delayed, so the project may be delayed.",
-        "friendly": "The vendor says the materials are coming late, so the project could slip.",
-        "professional": "The vendor has indicated that delivery of the materials will be delayed, which may delay the project.",
-        "formal": "The vendor has notified us of a delay in the delivery of materials, which may consequently delay the project.",
-    },
-
-    # ========================================================
-    # 169. Project: sprint review
-    # ========================================================
-    {
-        "input": "sprint review ကို ဒီသောကြာနေ့ လုပ်မယ်။",
-        "simple": "We'll hold the sprint review this Friday.",
-        "polite": "We're planning to hold the sprint review this Friday.",
-        "friendly": "Sprint review's happening this Friday.",
-        "professional": "The sprint review is scheduled for this Friday.",
-        "formal": "The sprint review has been scheduled for this coming Friday.",
-    },
-
-    # ========================================================
-    # 170. Project: lessons learned
-    # ========================================================
-    {
-        "input": "project ပြီးရင် lessons learned doc ကို ရေးမယ်။",
-        "simple": "After the project, I'll write up the lessons learned.",
-        "polite": "Once the project is done, I'll write up the lessons learned document.",
-        "friendly": "After the project wraps, I'll jot down the lessons learned.",
-        "professional": "Following project completion, a lessons-learned document will be prepared.",
-        "formal": "Upon conclusion of the project, a formal lessons-learned document will be drafted.",
-    },
-
-    # ========================================================
-    # 171. Client: meeting follow-up
-    # ========================================================
-    {
-        "input": "client meeting ပြီးရင် summary ကို email ပို့ပေးမယ်။",
-        "simple": "After the client meeting, I'll send a summary by email.",
-        "polite": "After the client meeting, I'll send a summary via email.",
-        "friendly": "Once we're done with the client meeting, I'll email a summary.",
-        "professional": "Following the client meeting, I will circulate a summary via email.",
-        "formal": "Subsequent to the client meeting, a summary will be circulated by electronic mail.",
-    },
-
-    # ========================================================
-    # 172. Client: question clarification
-    # ========================================================
-    {
-        "input": "client က မေးထားတဲ့မေးခွန်းကို ပြန်ဖြေဖို့ လိုတယ်။",
-        "simple": "We need to reply to the question the client asked.",
-        "polite": "We need to respond to the question the client raised.",
-        "friendly": "We need to get back to the client's question.",
-        "professional": "A response is required to the question raised by the client.",
-        "formal": "It is necessary to provide a formal response to the question raised by the client.",
-    },
-
-    # ========================================================
-    # 173. Client: invoice query
-    # ========================================================
-    {
-        "input": "client က invoice အကြောင်း မေးလာလို့ ပြန်ဖြေပေးပါ။",
-        "simple": "The client asked about the invoice, so please reply to them.",
-        "polite": "The client has enquired about the invoice, so could you please reply to them?",
-        "friendly": "The client's asking about the invoice — can you get back to them?",
-        "professional": "The client has raised a query regarding the invoice. Please respond accordingly.",
-        "formal": "The client has submitted an enquiry concerning the invoice. Kindly furnish an appropriate response.",
-    },
-
-    # ========================================================
-    # 174. Client: proposal accepted
-    # ========================================================
-    {
-        "input": "client က proposal ကို လက်ခံသွားပြီ၊ ဒါကြောင့် contract ဆက်လုပ်နိုင်ပြီ။",
-        "simple": "The client accepted the proposal, so we can move forward with the contract.",
-        "polite": "The client has accepted the proposal, so we can proceed with the contract.",
-        "friendly": "The client said yes to the proposal — we can move on to the contract.",
-        "professional": "The client has accepted the proposal, and we may therefore proceed with the contract.",
-        "formal": "The client has accepted the proposal; accordingly, we may proceed with the contract.",
-    },
-
-    # ========================================================
-    # 175. Client: feedback positive
-    # ========================================================
-    {
-        "input": "client က feedback ကောင်းပေးထားတယ်၊ team ကို ပြောပြပေးပါ။",
-        "simple": "The client gave good feedback. Please tell the team.",
-        "polite": "The client gave positive feedback. Could you please share it with the team?",
-        "friendly": "The client loved it — let the team know!",
-        "professional": "The client has provided positive feedback. Please communicate this to the team.",
-        "formal": "The client has furnished favourable feedback. Kindly convey this to the team.",
-    },
-
-    # ========================================================
-    # 176. Client: quotation request
-    # ========================================================
-    {
-        "input": "client က quotation တောင်းထားလို့ ဒီနေ့အတွင်း ပို့ရမယ်။",
-        "simple": "The client asked for a quotation, so we need to send it today.",
-        "polite": "The client has requested a quotation, so we should send it by the end of today.",
-        "friendly": "The client wants a quote — we need to get it to them today.",
-        "professional": "The client has requested a quotation, which must be submitted by the end of today.",
-        "formal": "The client has requested a quotation, which must be furnished by the close of business today.",
-    },
-
-    # ========================================================
-    # 177. Client: contract renewal
-    # ========================================================
-    {
-        "input": "client contract က ဒီလကုန် ကုန်မယ်၊ renewal အတွက် ပြင်ဆင်ရမယ်။",
-        "simple": "The client contract expires at the end of this month, so we need to prepare for renewal.",
-        "polite": "The client contract expires at the end of this month, so we'll need to prepare for its renewal.",
-        "friendly": "The client contract runs out at month's end, so let's get ready to renew it.",
-        "professional": "The client contract expires at the end of this month, and preparations for renewal are required.",
-        "formal": "The client contract is due to expire at the end of the present month; preparations for its renewal are therefore required.",
-    },
-
-    # ========================================================
-    # 178. Client: support ticket
-    # ========================================================
-    {
-        "input": "client က support ticket ဖွင့်ထားလို့ အမြန်ဆုံး ဖြေရှင်းပေးပါ။",
-        "simple": "The client opened a support ticket, so please resolve it as soon as possible.",
-        "polite": "The client has opened a support ticket. Could you please resolve it as soon as possible?",
-        "friendly": "The client raised a support ticket — can you look into it ASAP?",
-        "professional": "The client has raised a support ticket. Please address it at the earliest opportunity.",
-        "formal": "The client has submitted a support ticket. Kindly attend to it with the utmost urgency.",
-    },
-
-    # ========================================================
-    # 179. Client: payment follow-up
-    # ========================================================
-    {
-        "input": "client က payment ကို မပေးသေးလို့ follow up လုပ်ပေးပါ။",
-        "simple": "The client hasn't paid yet, so please follow up.",
-        "polite": "The client hasn't made the payment yet. Could you please follow up with them?",
-        "friendly": "The client hasn't paid yet — can you chase them up?",
-        "professional": "Payment from the client remains outstanding. Please follow up accordingly.",
-        "formal": "The payment from the client remains outstanding. Kindly follow up on the matter.",
-    },
-
-    # ========================================================
-    # 180. Client: NDA signing
-    # ========================================================
-    {
-        "input": "NDA ကို လက်မှတ်ထိုးပြီးပြီလား။",
-        "simple": "Has the NDA been signed yet?",
-        "polite": "Could you please confirm whether the NDA has been signed?",
-        "friendly": "Have they signed the NDA yet?",
-        "professional": "Could you please confirm whether the NDA has been executed?",
-        "formal": "I would appreciate confirmation as to whether the NDA has been duly executed.",
-    },
-
-    # ========================================================
-    # 181. Client: product demo feedback
-    # ========================================================
-    {
-        "input": "client က product demo ကြည့်ပြီး feedback ပေးထားတယ်။",
-        "simple": "The client watched the product demo and gave feedback.",
-        "polite": "The client has viewed the product demo and provided feedback.",
-        "friendly": "The client checked out the product demo and gave us feedback.",
-        "professional": "The client has reviewed the product demonstration and provided feedback.",
-        "formal": "The client has reviewed the product demonstration and furnished the relevant feedback.",
-    },
-
-    # ========================================================
-    # 182. Client: project kickoff
-    # ========================================================
-    {
-        "input": "client project kickoff ကို နောက်အပတ် လုပ်မယ်။",
-        "simple": "We'll hold the client project kickoff next week.",
-        "polite": "We're planning to hold the client project kickoff next week.",
-        "friendly": "Client project kickoff is next week.",
-        "professional": "The client project kickoff is scheduled for next week.",
-        "formal": "The client project kickoff has been scheduled for the forthcoming week.",
-    },
-
-    # ========================================================
-    # 183. Client: change order
-    # ========================================================
-    {
-        "input": "client က change order တစ်ခု ပို့လာလို့ စစ်နေတယ်။",
-        "simple": "The client sent a change order, so we're reviewing it.",
-        "polite": "The client has sent a change order, so we're currently reviewing it.",
-        "friendly": "The client sent over a change order — we're looking at it now.",
-        "professional": "A change order has been received from the client and is currently under review.",
-        "formal": "A change order has been received from the client and is presently undergoing review.",
-    },
-
-    # ========================================================
-    # 184. Client: escalation
-    # ========================================================
-    {
-        "input": "client က ကိစ္စတစ်ခုအတွက် escalate လုပ်ထားလို့ manager ကို အကြောင်းကြားထားတယ်။",
-        "simple": "The client escalated an issue, so I've informed the manager.",
-        "polite": "The client has escalated an issue, so I've informed the manager accordingly.",
-        "friendly": "The client escalated something, so I gave the manager a heads-up.",
-        "professional": "The client has escalated an issue, and the manager has been duly informed.",
-        "formal": "The client has escalated a matter, and the manager has been duly apprised of the situation.",
-    },
-
-    # ========================================================
-    # 185. Client: satisfaction survey
-    # ========================================================
-    {
-        "input": "client satisfaction survey ကို ပို့ထားပြီး response စောင့်နေတယ်။",
-        "simple": "We sent the client satisfaction survey and are waiting for responses.",
-        "polite": "We've sent out the client satisfaction survey and are awaiting responses.",
-        "friendly": "We sent the satisfaction survey and are waiting to hear back.",
-        "professional": "The client satisfaction survey has been distributed, and responses are currently pending.",
-        "formal": "The client satisfaction survey has been dispatched, and responses are presently awaited.",
-    },
-
-    # ========================================================
-    # 186. Daily: running late to meet friend
-    # ========================================================
-    {
-        "input": "သူငယ်ချင်းနဲ့ ချိန်းထားတာ 15 မိနစ်လောက် နောက်ကျမယ်။",
-        "simple": "I'll be about 15 minutes late to meet my friend.",
-        "polite": "I'm sorry, but I'll be about 15 minutes late to meet my friend.",
-        "friendly": "I'm running about 15 minutes late to meet my friend.",
-        "professional": "I will be approximately 15 minutes late for my appointment with my friend.",
-        "formal": "I will be delayed by approximately 15 minutes for my scheduled meeting with my friend.",
-    },
-
-    # ========================================================
-    # 187. Daily: forgot wallet
-    # ========================================================
-    {
-        "input": "wallet မေ့ကျန်ခဲ့လို့ အခု အိမ်ပြန်ယူရမယ်။",
-        "simple": "I forgot my wallet, so I need to go home and get it.",
-        "polite": "I'm sorry, but I forgot my wallet, so I need to go home and get it.",
-        "friendly": "I left my wallet at home — I've got to run back and grab it.",
-        "professional": "I have left my wallet at home and need to return to retrieve it.",
-        "formal": "As I have inadvertently left my wallet at home, I must return to retrieve it.",
-    },
-
-    # ========================================================
-    # 188. Daily: waiting for delivery
-    # ========================================================
-    {
-        "input": "delivery က ဒီနေ့ ရောက်မယ်လို့ ပြောထားတယ်၊ ဒါပေမယ့် မရောက်သေးဘူး။",
-        "simple": "The delivery was supposed to arrive today, but it hasn't come yet.",
-        "polite": "The delivery was expected today, but it hasn't arrived yet.",
-        "friendly": "The delivery was supposed to come today, but it's still not here.",
-        "professional": "The delivery was scheduled for today; however, it has not yet arrived.",
-        "formal": "The delivery was scheduled to arrive today; however, it has not yet been received.",
-    },
-
-    # ========================================================
-    # 189. Daily: power cut at home
-    # ========================================================
-    {
-        "input": "အိမ်မှာ မီးပြတ်နေလို့ အခု ဖုန်း charge လုပ်လို့မရဘူး။",
-        "simple": "The power is out at home, so I can't charge my phone right now.",
-        "polite": "I'm sorry, but the power is out at home, so I can't charge my phone right now.",
-        "friendly": "We've got a power cut at home, so my phone's dead and I can't charge it.",
-        "professional": "Due to a power outage at home, I am currently unable to charge my phone.",
-        "formal": "Owing to a power interruption at my residence, I am presently unable to charge my telephone.",
-    },
-
-    # ========================================================
-    # 190. Daily: internet slow at home
-    # ========================================================
-    {
-        "input": "အိမ်က internet အရမ်းနှေးနေလို့ video call မလုပ်နိုင်ဘူး။",
-        "simple": "The internet at home is very slow, so I can't make a video call.",
-        "polite": "I'm sorry, but the internet at home is very slow, so I can't make a video call.",
-        "friendly": "My home internet is super slow, so I can't do a video call.",
-        "professional": "Due to a slow internet connection at home, I am unable to conduct a video call.",
-        "formal": "Owing to the significantly reduced internet speed at my residence, I am unable to participate in a video call.",
-    },
-
-    # ========================================================
-    # 191. Daily: lost phone
-    # ========================================================
-    {
-        "input": "ဖုန်း ပျောက်သွားလို့ အခု ရှာနေတယ်။",
-        "simple": "I lost my phone, so I'm looking for it now.",
-        "polite": "I'm sorry, but I've lost my phone and am currently looking for it.",
-        "friendly": "I've lost my phone — I'm hunting for it right now.",
-        "professional": "I have misplaced my phone and am currently searching for it.",
-        "formal": "I have misplaced my telephone and am presently engaged in searching for it.",
-    },
-
-    # ========================================================
-    # 192. Daily: forgot appointment
-    # ========================================================
-    {
-        "input": "appointment ရှိတာ မေ့သွားလို့ ခွင့်လွှတ်ပါ။",
-        "simple": "I forgot about the appointment. Please forgive me.",
-        "polite": "I'm sorry, I completely forgot about the appointment. Please accept my apologies.",
-        "friendly": "I completely forgot about the appointment — so sorry!",
-        "professional": "I overlooked the appointment entirely. I sincerely apologize.",
-        "formal": "I regret that I overlooked the appointment. Please accept my sincere apologies.",
-    },
-
-    # ========================================================
-    # 193. Daily: sick and resting
-    # ========================================================
-    {
-        "input": "နေမကောင်းလို့ ဒီနေ့ အိမ်မှာ နားနေမယ်။",
-        "simple": "I'm not feeling well, so I'll rest at home today.",
-        "polite": "I'm not feeling well, so I'll be resting at home today.",
-        "friendly": "I'm feeling sick, so I'm just going to chill at home today.",
-        "professional": "As I am unwell, I will be resting at home today.",
-        "formal": "Owing to illness, I will remain at home today to rest.",
-    },
-
-    # ========================================================
-    # 194. Daily: family gathering
-    # ========================================================
-    {
-        "input": "ဒီတနင်္ဂနွေနေ့ မိသားစု စုဝေးပွဲ ရှိတယ်။",
-        "simple": "We have a family gathering this Sunday.",
-        "polite": "We have a family gathering this Sunday, so I'll be attending that.",
-        "friendly": "We've got a family get-together this Sunday.",
-        "professional": "A family gathering is scheduled for this Sunday.",
-        "formal": "A family gathering has been scheduled for this coming Sunday.",
-    },
-
-    # ========================================================
-    # 195. Daily: helping friend move
-    # ========================================================
-    {
-        "input": "သူငယ်ချင်း အိမ်ရွှေ့ဖို့ ကူညီပေးရမယ်၊ ဒါကြောင့် ဒီနေ့ မအားဘူး။",
-        "simple": "I'm helping my friend move, so I'm not free today.",
-        "polite": "I'm helping my friend move today, so I'm afraid I'm not free.",
-        "friendly": "I'm helping a friend move today, so I'm pretty tied up.",
-        "professional": "I am assisting a friend with a move today and am therefore unavailable.",
-        "formal": "As I am assisting a friend with relocation today, I am unavailable.",
-    },
-
-    # ========================================================
-    # 196. Daily: forgot to reply
-    # ========================================================
-    {
-        "input": "message ကို မေ့သွားလို့ reply မပြန်ဖြစ်တာ တောင်းပန်ပါတယ်။",
-        "simple": "I forgot to reply to your message. I'm sorry.",
-        "polite": "I'm sorry, I forgot to reply to your message. Please accept my apologies.",
-        "friendly": "Sorry I didn't reply — I totally forgot about your message.",
-        "professional": "I overlooked replying to your message. I apologize for the delay.",
-        "formal": "I regret that I failed to reply to your message. Please accept my sincere apologies.",
-    },
-
-    # ========================================================
-    # 197. Daily: late for dinner
-    # ========================================================
-    {
-        "input": "ဒီနေ့ ညစာ နောက်ကျမယ်၊ အလုပ်တွေ များနေလို့။",
-        "simple": "I'll be late for dinner today because I have a lot of work.",
-        "polite": "I'm sorry, but I'll be a little late for dinner today because I have a lot of work.",
-        "friendly": "I'm swamped with work, so I'll be late for dinner tonight.",
-        "professional": "Due to a heavy workload, I will be late for dinner this evening.",
-        "formal": "Owing to an extensive workload, I will be delayed in arriving for dinner this evening.",
-    },
-
-    # ========================================================
-    # 198. Daily: car won't start
-    # ========================================================
-    {
-        "input": "ကား စက်မနှိုးနိုင်ဘူး၊ mechanic ကို ခေါ်ရမယ်။",
-        "simple": "My car won't start, so I need to call a mechanic.",
-        "polite": "My car won't start, so I'll need to call a mechanic.",
-        "friendly": "My car won't start — I've got to call a mechanic.",
-        "professional": "My vehicle will not start, and I therefore need to contact a mechanic.",
-        "formal": "As my vehicle will not start, it will be necessary to summon a mechanic.",
-    },
-
-    # ========================================================
-    # 199. Daily: keys locked inside
-    # ========================================================
-    {
-        "input": "သော့ကို အထဲမှာ မေ့ကျန်ခဲ့လို့ အိမ်ထဲ ဝင်လို့မရဘူး။",
-        "simple": "I locked my keys inside, so I can't get into the house.",
-        "polite": "I'm sorry, but I locked my keys inside, so I can't get into the house.",
-        "friendly": "I locked my keys inside — I'm stuck outside the house.",
-        "professional": "I have locked my keys inside and am therefore unable to enter the house.",
-        "formal": "As I have inadvertently locked my keys inside the premises, I am presently unable to gain entry.",
-    },
-
-    # ========================================================
-    # 200. Daily: catching up later
-    # ========================================================
-    {
-        "input": "အခု မအားသေးလို့ နောက်မှ ပြန်ဆက်သွယ်ပါမယ်။",
-        "simple": "I'm not free right now, so I'll get back to you later.",
-        "polite": "I'm sorry, but I'm not free right now. I'll get back to you later.",
-        "friendly": "I'm a bit tied up right now — I'll catch up with you later.",
-        "professional": "I am currently unavailable and will follow up with you at a later time.",
-        "formal": "As I am presently unavailable, I will contact you again at a later time.",
-    },
-
-            ]
 
 # ============================================================
 # Normalize text
@@ -3698,7 +5036,7 @@ def expanded_context_rule_translation(text: str, tone: str):
             "Due to heavy traffic, I will not be able to arrive at the office on time.",
             "Because of the severe traffic congestion, I will be unable to reach the office by the expected time.",
         )
-    
+
     # 003. School: traffic + late
     if has('traffic', 'ကားပိတ်', 'ကားကြပ်') and has('ကျောင်း', 'school') and has('နောက်ကျ', 'late'):
         return variants(
@@ -4679,1006 +6017,7 @@ def expanded_context_rule_translation(text: str, tone: str):
             "Please be advised that I have seen your message and will respond in due course.",
         )
 
-        # 101. Message: forgot to reply earlier
-    if has('မေ့', 'forgot') and has('reply', 'ပြန်') and has('တောင်းပန်', 'sorry'):
-        return variants(
-            "I forgot to reply to you earlier. I'm sorry about that.",
-            "I'm sorry, I forgot to reply to you earlier. Please accept my apologies.",
-            "Sorry, I totally forgot to reply to you earlier.",
-            "I overlooked replying to you earlier. I apologize for the delay.",
-            "I regret that I failed to reply to you earlier. Please accept my sincere apologies.",
-        )
 
-    # 102. Message: busy + will reply later
-    if has('အလုပ်များ', 'busy', 'occupied') and has('reply', 'ပြန်') and has('နောက်မှ', 'later'):
-        return variants(
-            "I'm busy right now, but I'll reply to you later.",
-            "I'm a little busy at the moment. I'll reply to you a little later.",
-            "I'm tied up right now — I'll get back to you later.",
-            "I am currently occupied and will respond to you at a later time.",
-            "As I am presently engaged, I will provide a response at a later time.",
-        )
-
-    # 103. Message: apologise for late reply
-    if has('reply', 'ပြန်') and has('နောက်ကျ', 'late', 'delayed') and has('တောင်းပန်', 'sorry'):
-        return variants(
-            "Sorry for the late reply.",
-            "I'm sorry for the delayed reply. Thank you for your patience.",
-            "Sorry I'm replying so late.",
-            "I apologize for the delayed response.",
-            "Please accept my apologies for the delayed reply.",
-        )
-
-    # 104. Message: received + will check
-    if has('ရပြီ', 'received', 'got it') and has('စစ်', 'check') and has('ပြန်', 'reply', 'get back'):
-        return variants(
-            "I received your message. I'll check and get back to you.",
-            "I've received your message. I'll look into it and get back to you shortly.",
-            "Got your message — I'll check and get back to you.",
-            "I have received your message and will review it before responding.",
-            "I acknowledge receipt of your message and will review the matter before providing a response.",
-        )
-
-    # 105. Message: will forward
-    if has('ပို့', 'forward', 'send') and has('သက်ဆိုင်ရာ', 'relevant') and has('လူ', 'person', 'team'):
-        return variants(
-            "I'll forward this to the relevant person.",
-            "I'll forward this to the appropriate person right away.",
-            "I'll pass this along to the right person.",
-            "I will forward this matter to the relevant department or individual.",
-            "I will transmit this matter to the appropriate party for their attention.",
-        )
-
-    # 106. Message: need more info
-    if has('အချက်အလက်', 'information') and has('လို', 'need') and has('ထပ်', 'more', 'additional'):
-        return variants(
-            "I need more information to proceed.",
-            "I'll need a little more information before I can proceed.",
-            "I could use some more info before I move forward.",
-            "Additional information is required before I can proceed.",
-            "Further information is required in order to proceed with this matter.",
-        )
-
-    # 107. Message: clarification request
-    if has('ရှင်း', 'clarify', 'clarification') and has('လို', 'need') and has('ဒီ', 'this'):
-        return variants(
-            "I need some clarification on this.",
-            "Could you please clarify this for me?",
-            "Can you clear this up for me a bit?",
-            "I would like to request clarification regarding this matter.",
-            "I would appreciate further clarification on this matter.",
-        )
-
-    # 108. Message: confirmation request
-    if has('အတည်ပြု', 'confirm', 'confirmation') and has('လို', 'need') and has('ဒီ', 'this'):
-        return variants(
-            "Could you confirm this for me?",
-            "Could you please confirm this for me?",
-            "Can you confirm this when you get a chance?",
-            "I would like to request confirmation regarding this matter.",
-            "I would appreciate formal confirmation of this matter.",
-        )
-
-    # 109. Message: follow up
-    if has('follow up', 'follow-up') and has('အကြောင်း', 'about') and has('ပြန်', 'get back', 'reply'):
-        return variants(
-            "I'm following up on this. Please get back to me when you can.",
-            "I'm just following up on this. Could you please get back to me when you have a moment?",
-            "Just checking in on this — can you get back to me when you can?",
-            "I am following up on this matter. Please respond at your earliest convenience.",
-            "I am writing to follow up on this matter and would appreciate a response at your earliest convenience.",
-        )
-
-    # 110. Message: will do
-    if has('လုပ်', 'do', 'handle') and has('ပါမယ်', 'will') and has('ချက်ချင်း', 'right away', 'immediately'):
-        return variants(
-            "I'll do it right away.",
-            "I'll take care of it right away.",
-            "I'm on it — I'll get it done right away.",
-            "I will handle this immediately.",
-            "I will attend to this matter immediately.",
-        )
-
-    # 111. Message: will do later
-    if has('လုပ်', 'do', 'handle') and has('ပါမယ်', 'will') and has('နောက်မှ', 'later'):
-        return variants(
-            "I'll do it later.",
-            "I'll take care of it a little later.",
-            "I'll get to it later.",
-            "I will attend to this matter at a later time.",
-            "I will address this matter at a later time.",
-        )
-
-    # 112. Message: acknowledge
-    if has('သိပြီ', 'noted', 'acknowledged') and has('ကျေးဇူး', 'thanks', 'thank you'):
-        return variants(
-            "Noted, thank you.",
-            "Noted with thanks.",
-            "Got it — thanks!",
-            "Acknowledged. Thank you.",
-            "Acknowledged with thanks.",
-        )
-
-    # 113. Message: request for status
-    if has('status', 'အခြေအနေ') and has('မေး', 'ask', 'check') and has('ဒီ', 'this'):
-        return variants(
-            "Could I ask for an update on this?",
-            "Could I please ask for a status update on this?",
-            "Any update on this?",
-            "I would like to request a status update on this matter.",
-            "I would appreciate receiving a status update on this matter.",
-        )
-
-    # 114. Message: sharing document
-    if has('document', 'file', 'ဖိုင်') and has('ပို့', 'send', 'share') and has('ဒီ', 'this'):
-        return variants(
-            "I'm sending you this document.",
-            "I'm sending you this document for your review.",
-            "Here's the document — sending it your way.",
-            "Please find the document attached for your reference.",
-            "Please find attached the document for your kind perusal.",
-        )
-
-    # 115. Message: requesting document
-    if has('document', 'file', 'ဖိုင်') and has('လို', 'need', 'request') and has('ဒီ', 'this'):
-        return variants(
-            "Could you send me this document?",
-            "Could you please send me this document?",
-            "Can you share this file with me?",
-            "I would like to request this document from you.",
-            "I would appreciate it if you could provide me with this document.",
-        )
-
-    # 116. Message: preparing something
-    if has('ပြင်ဆင်', 'prepare', 'preparing') and has('နေ', 'now') and has('ဒီ', 'this'):
-        return variants(
-            "I'm preparing this now.",
-            "I'm currently preparing this.",
-            "I'm working on preparing this right now.",
-            "I am currently in the process of preparing this.",
-            "I am presently engaged in the preparation of this matter.",
-        )
-
-    # 117. Message: finished something
-    if has('ပြီးပြီ', 'finished', 'done') and has('ဒီ', 'this') and has('ပို့', 'send', 'share'):
-        return variants(
-            "I've finished this and will send it shortly.",
-            "I've finished this and will send it over shortly.",
-            "Done with this — I'll send it over in a bit.",
-            "This has been completed and will be sent shortly.",
-            "This matter has been completed and will be forwarded shortly.",
-        )
-
-    # 118. Message: still working
-    if has('လုပ်နေ', 'working on') and has('ဆေး', 'still') and has('ဒီ', 'this'):
-        return variants(
-            "I'm still working on this.",
-            "I'm still working on this and will update you soon.",
-            "Still working on it — I'll update you soon.",
-            "I am still working on this matter and will provide an update shortly.",
-            "I remain engaged with this matter and will furnish an update in due course.",
-        )
-
-    # 119. Message: almost done
-    if has('နီး', 'almost') and has('ပြီး', 'done', 'finished') and has('ဒီ', 'this'):
-        return variants(
-            "I'm almost done with this.",
-            "I'm almost finished with this.",
-            "Almost done with this one.",
-            "This is nearly complete.",
-            "This matter is nearing completion.",
-        )
-
-    # 120. Message: unable to do
-    if has('မလုပ်', 'cannot', 'unable') and has('နိုင်', 'can') and has('ဒီ', 'this'):
-        return variants(
-            "I can't do this.",
-            "I'm sorry, but I can't do this.",
-            "Sorry, I can't handle this one.",
-            "I am unable to complete this task.",
-            "I regret to inform you that I am unable to undertake this task.",
-        )
-
-    # 121. School: late due to bus
-    if has('ကျောင်း', 'school') and has('ဘတ်စ်ကား', 'bus') and has('နောက်ကျ', 'late', 'delayed'):
-        return variants(
-            "The bus is late, so I'll be late for school.",
-            "I'm sorry, but the bus is late, so I'll be late for school.",
-            "The bus is running late, so I'll be a bit late for school.",
-            "The bus is delayed, so I will be late for school.",
-            "Owing to a delay in the bus service, I will be late in arriving at school.",
-        )
-
-    # 122. School: forgot assignment
-    if has('ကျောင်း', 'school') and has('assignment', 'အိမ်စာ') and has('မေ့', 'forgot', 'left'):
-        return variants(
-            "I left my assignment at home. I'll bring it tomorrow.",
-            "I'm sorry, I left my assignment at home. I'll bring it tomorrow.",
-            "I forgot my assignment at home — I'll bring it in tomorrow.",
-            "I inadvertently left my assignment at home. I will submit it tomorrow.",
-            "I regret that I inadvertently left my assignment at home. I will submit it tomorrow without fail.",
-        )
-
-    # 123. School: extension request
-    if has('ကျောင်း', 'school', 'assignment') and has('deadline', 'သတ်မှတ်ချိန်') and has('တိုး', 'extend', 'extension'):
-        return variants(
-            "Could I get a small extension on this assignment?",
-            "Would it be possible to get a small extension on this assignment, please?",
-            "Any chance I could get a little more time on this assignment?",
-            "I would like to request a short extension for this assignment.",
-            "I respectfully request a brief extension of the deadline for this assignment.",
-        )
-
-    # 124. School: group member absent
-    if has('group', 'အဖွဲ့') and has('member', 'အဖွဲ့ဝင်') and has('မလာ', 'absent', 'unavailable'):
-        return variants(
-            "One of our group members can't come, so we need to move our group meeting.",
-            "One of our group members can't make it, so we'd like to move our group meeting.",
-            "One of our group members can't come, so we need to shift our meeting.",
-            "As one of our group members is unavailable, we need to reschedule our group meeting.",
-            "Owing to the unavailability of one of our group members, it will be necessary to reschedule our group meeting.",
-        )
-
-    # 125. School: exam clash
-    if has('exam', 'စာမေးပွဲ') and has('တိုက်', 'clash', 'overlap') and has('အချိန်', 'time'):
-        return variants(
-            "Two of my exams are at the same time, so I'd like to ask the teacher about it.",
-            "Two of my exams clash, so I'd like to ask the teacher about it, please.",
-            "Two of my exams overlap — I want to check with the teacher about it.",
-            "Two of my examinations are scheduled at the same time, so I would like to consult the instructor.",
-            "As two of my examinations are scheduled concurrently, I would like to seek the instructor's guidance on the matter.",
-        )
-
-    # 126. School: late submission
-    if has('report', 'assignment') and has('late', 'နောက်ကျ') and has('submit', 'တင်'):
-        return variants(
-            "I'm sorry for submitting the report late.",
-            "I'm sorry for submitting the report late. I hope you can understand.",
-            "Sorry the report's late — that's on me.",
-            "I apologize for the late submission of the report.",
-            "I sincerely apologize for the delayed submission of the report.",
-        )
-
-    # 127. School: missed lecture
-    if has('lecture', 'အတန်း') and has('မတက်', 'missed', 'could not attend') and has('notes', 'မှတ်စု'):
-        return variants(
-            "I couldn't attend yesterday's lecture. Could you send me the notes?",
-            "I couldn't attend yesterday's lecture. Would you mind sending me the notes?",
-            "I missed yesterday's lecture — can you send me the notes?",
-            "I was unable to attend yesterday's lecture. Could you please share the notes with me?",
-            "As I was unable to attend yesterday's lecture, I would appreciate it if you could provide me with the notes.",
-        )
-
-    # 128. School: library fine
-    if has('library', 'စာကြည့်တိုက်') and has('book', 'စာအုပ်') and has('fine', 'နောက်ကျ'):
-        return variants(
-            "I'm late returning the library book. Will there be a fine?",
-            "I'm sorry, I'm late returning the library book. Will there be a fine?",
-            "I'm late returning my library book — will I get fined?",
-            "I have returned the library book late. Could you please confirm whether a fine applies?",
-            "As I have returned the library book after the due date, I would like to enquire whether a fine is applicable.",
-        )
-
-    # 129. School: recommendation letter
-    if has('recommendation', 'letter', 'ထောက်ခံစာ') and has('scholarship', 'job', 'application'):
-        return variants(
-            "Could you write me a recommendation letter?",
-            "Would you be able to write me a recommendation letter, please?",
-            "Any chance you could write me a recommendation letter?",
-            "I would like to request a recommendation letter in support of my application.",
-            "I respectfully request that you consider writing a letter of recommendation in support of my application.",
-        )
-
-    # 130. School: tuition fee
-    if has('tuition', 'fee', 'ကျောင်းလခ') and has('ပေး', 'pay', 'payment'):
-        return variants(
-            "I'll pay the tuition fee within this week.",
-            "I'll make sure to pay the tuition fee within this week.",
-            "I'll get the tuition fee paid sometime this week.",
-            "I will settle the tuition fee within the course of this week.",
-            "I will ensure that the tuition fee is remitted within the course of this week.",
-        )
-
-    # 131. School: club activity
-    if has('club', 'activity') and has('ကျောင်း', 'school') and has('နောက်ကျ', 'late'):
-        return variants(
-            "I have a club activity today, so I'll get home a little late after school.",
-            "I have a club activity today, so I'll be getting home a little late after school.",
-            "I've got a club thing today, so I'll be home a bit late after school.",
-            "I have a club activity scheduled today and will therefore return home later than usual after school.",
-            "As I have a scheduled club activity today, I will return home later than usual following the conclusion of school.",
-        )
-
-    # 132. School: exam results
-    if has('exam', 'result', 'ရလဒ်') and has('online', 'ကြည့်', 'check'):
-        return variants(
-            "Can I check the exam results online yet?",
-            "Could you please let me know if the exam results are available online yet?",
-            "Are the exam results up online yet?",
-            "Could you please confirm whether the examination results are now accessible online?",
-            "I would appreciate confirmation as to whether the examination results are now available online.",
-        )
-
-    # 133. School: presentation practice
-    if has('presentation', 'practice', 'လေ့ကျင့်') and has('partner', 'အဖော်'):
-        return variants(
-            "I'll practice with my partner tonight for the presentation.",
-            "I'll be practising with my partner tonight for the presentation.",
-            "I'm practising with my partner tonight for the presentation.",
-            "I will be rehearsing with my partner this evening in preparation for the presentation.",
-            "I will be rehearsing with my partner this evening in preparation for the forthcoming presentation.",
-        )
-
-    # 134. School: competition leave
-    if has('competition', 'ပြိုင်ပွဲ') and has('ခွင့်', 'leave') and has('ကျောင်း', 'school'):
-        return variants(
-            "I have to attend a school competition, so I'd like to ask for three days off.",
-            "I have to attend a school competition, so I'd like to request three days of leave, please.",
-            "I'm going to a school competition, so I need three days off.",
-            "As I will be representing the school at a competition, I would like to request three days of leave.",
-            "As I will be representing the school at an upcoming competition, I respectfully request three days of leave.",
-        )
-
-    # 135. School: lab report
-    if has('lab', 'report') and has('submit', 'တင်') and has('မနက်', 'morning', 'tomorrow'):
-        return variants(
-            "Can I submit the lab report tomorrow morning?",
-            "Would it be possible to submit the lab report tomorrow morning, please?",
-            "Can I hand in the lab report tomorrow morning?",
-            "Would it be acceptable to submit the lab report tomorrow morning?",
-            "I would like to enquire whether submission of the lab report tomorrow morning would be acceptable.",
-        )
-
-    # 136. School: schedule change
-    if has('class', 'schedule') and has('ပြောင်း', 'change') and has('စစ်', 'check'):
-        return variants(
-            "The class schedule changed this week, so I need to check the class times again.",
-            "The class schedule has changed this week, so I'll need to check the class times again.",
-            "The class schedule changed this week, so I've got to recheck my class times.",
-            "As the class schedule has been revised this week, I will need to reconfirm the class times.",
-            "Owing to a revision of the class schedule this week, it will be necessary to reconfirm the class times.",
-        )
-
-    # 137. School: peer tutoring
-    if has('သူငယ်ချင်း', 'friend') and has('math', 'သင်ပေး', 'tutor') and has('library', 'စာကြည့်တိုက်'):
-        return variants(
-            "I'm helping my friend with math, so I'll be at the library today.",
-            "I'm helping my friend with math, so I'll be studying at the library today.",
-            "I'm tutoring my friend in math, so I'll be hanging out at the library today.",
-            "I am assisting a friend with mathematics and will therefore be at the library today.",
-            "As I am providing academic assistance to a fellow student in mathematics, I will be at the library today.",
-        )
-
-    # 138. School: thesis supervisor
-    if has('thesis', 'supervisor') and has('တွေ့', 'meet') and has('ညနေ', 'afternoon', 'today'):
-        return variants(
-            "I'm meeting my thesis supervisor this afternoon.",
-            "I have a meeting with my thesis supervisor this afternoon.",
-            "I'm catching up with my thesis supervisor this afternoon.",
-            "I have a scheduled meeting with my thesis supervisor this afternoon.",
-            "I am scheduled to meet with my thesis supervisor this afternoon.",
-        )
-
-    # 139. School: scholarship interview
-    if has('scholarship', 'interview') and has('မနက်ဖြန်', 'tomorrow') and has('ပြင်', 'prepare'):
-        return variants(
-            "I have a scholarship interview tomorrow, so I'm preparing tonight.",
-            "I have a scholarship interview tomorrow, so I'll be preparing tonight.",
-            "I've got a scholarship interview tomorrow, so I'm prepping tonight.",
-            "I have a scholarship interview scheduled for tomorrow and will therefore be preparing this evening.",
-            "As I have a scholarship interview scheduled for tomorrow, I will be devoting this evening to preparation.",
-        )
-
-    # 140. School: absence for medical reason
-    if has('ဆရာဝန်', 'doctor') and has('appointment') and has('class', 'ကျောင်း', 'school'):
-        return variants(
-            "I have a doctor's appointment, so I can't attend class tomorrow.",
-            "I'm sorry, but I have a doctor's appointment, so I won't be able to attend class tomorrow.",
-            "I've got a doctor's appointment, so I won't make it to class tomorrow.",
-            "Due to a medical appointment, I will be unable to attend class tomorrow.",
-            "Owing to a scheduled medical appointment, I will be unable to attend class tomorrow.",
-        )
-
-    # 141. Meeting: reschedule due to conflict
-    if has('meeting') and has('တိုက်', 'clash', 'conflict') and has('ရွှေ့', 'move', 'reschedule'):
-        return variants(
-            "This meeting clashes with another one, so could we move it?",
-            "This meeting clashes with another one. Would it be possible to move it, please?",
-            "This meeting overlaps with another — can we shift it?",
-            "This meeting conflicts with another commitment. Could we please reschedule it?",
-            "As this meeting conflicts with another previously scheduled commitment, I would appreciate it if it could be rescheduled.",
-        )
-
-    # 142. Meeting: joining late
-    if has('meeting') and has('နောက်ကျ', 'late') and has('join', 'ဝင်') and has('မိနစ်', 'minutes'):
-        return variants(
-            "I'm on my way, so I'll join the meeting about 10 minutes late.",
-            "I'm currently on my way, so I'll join the meeting about 10 minutes late. Thank you for your understanding.",
-            "I'm on the way — I'll hop into the meeting about 10 minutes late.",
-            "I am currently en route and will join the meeting approximately 10 minutes late.",
-            "I am presently en route and expect to join the meeting approximately 10 minutes after its commencement.",
-        )
-
-    # 143. Meeting: online link issue
-    if has('meeting') and has('link') and has('မရ', 'not working', 'broken'):
-        return variants(
-            "The meeting link isn't working. Could you send it again?",
-            "The meeting link isn't working. Would you mind sending it again, please?",
-            "The meeting link isn't working — can you resend it?",
-            "The meeting link appears to be non-functional. Could you please resend it?",
-            "The meeting link appears to be non-functional. I would appreciate it if you could kindly resend it.",
-        )
-
-    # 144. Meeting: need minutes
-    if has('meeting') and has('minutes', 'မှတ်တမ်း') and has('ပို့', 'send', 'forward'):
-        return variants(
-            "Could you send me yesterday's meeting minutes?",
-            "Could you please send me yesterday's meeting minutes?",
-            "Can you send me yesterday's meeting minutes?",
-            "Could you please forward yesterday's meeting minutes to me?",
-            "I would appreciate it if you could kindly provide me with a copy of yesterday's meeting minutes.",
-        )
-
-    # 145. Meeting: agenda request
-    if has('meeting') and has('agenda') and has('ပို့', 'send', 'circulate'):
-        return variants(
-            "Could you send the agenda for tomorrow's meeting in advance?",
-            "Could you please send the agenda for tomorrow's meeting in advance?",
-            "Can you send over tomorrow's meeting agenda ahead of time?",
-            "Could you please circulate the agenda for tomorrow's meeting in advance?",
-            "I would appreciate it if the agenda for tomorrow's meeting could be circulated in advance.",
-        )
-
-    # 146. Meeting: leave early
-    if has('meeting') and has('စောထွက်', 'leave early') and has('appointment', 'engagement'):
-        return variants(
-            "I'll need to leave today's meeting early because I have an appointment.",
-            "I'm sorry, but I'll need to leave today's meeting early because I have an appointment.",
-            "I've got an appointment, so I'll have to duck out of today's meeting early.",
-            "Due to a prior appointment, I will need to leave today's meeting early.",
-            "Owing to a prior engagement, I will be required to leave today's meeting before its conclusion.",
-        )
-
-    # 147. Meeting: follow-up questions
-    if has('meeting') and has('မေး', 'question') and has('ပြီး', 'after') and has('နေ', 'stay'):
-        return variants(
-            "I have some questions after the meeting. Could you stay for a moment?",
-            "I have a few questions after the meeting. Could you please stay for a moment?",
-            "I've got a couple of questions after the meeting — can you hang around for a bit?",
-            "I have some follow-up questions after the meeting. Would you be available to stay briefly?",
-            "I have several follow-up questions following the meeting. I would appreciate it if you could remain briefly.",
-        )
-
-    # 148. Meeting: recording request
-    if has('meeting') and has('record', 'recording') and has('ရ', 'okay', 'allowed'):
-        return variants(
-            "Is it okay if I record the meeting?",
-            "Would it be alright if I recorded the meeting?",
-            "Mind if I record the meeting?",
-            "Would it be permissible for me to record the meeting?",
-            "I would like to enquire whether it would be permissible to record the meeting.",
-        )
-
-    # 149. Meeting: mic issue
-    if has('meeting') and has('mic', 'microphone') and has('မရ', 'not working', 'problem'):
-        return variants(
-            "My mic isn't working in the meeting, so I'll type my responses.",
-            "My microphone isn't working in the meeting, so I'll respond via chat instead.",
-            "My mic's dead in the meeting, so I'll just type in chat.",
-            "My microphone is not functioning during the meeting, so I will communicate via the chat function.",
-            "As my microphone is not functioning during the meeting, I will communicate via the written chat facility.",
-        )
-
-    # 150. Meeting: need more time
-    if has('meeting') and has('discuss', 'ဆွေးနွေး') and has('အချိန်', 'time') and has('လို', 'need', 'more'):
-        return variants(
-            "We need a little more time to discuss this in the meeting.",
-            "Would it be possible to have a little more time to discuss this in the meeting?",
-            "We could use a bit more time to go over this in the meeting.",
-            "Additional time is required to adequately discuss this matter during the meeting.",
-            "Further time is required in order to give the matter due consideration during the meeting.",
-        )
-
-    # 151. Meeting: confirm attendance
-    if has('meeting') and has('တက်', 'attend') and has('confirm', 'အတည်ပြု'):
-        return variants(
-            "I'd like to confirm that I'll attend tomorrow's meeting.",
-            "I'd like to confirm that I will be attending tomorrow's meeting.",
-            "Just confirming — I'll be at tomorrow's meeting.",
-            "I would like to confirm my attendance at tomorrow's meeting.",
-            "I would like to formally confirm my attendance at tomorrow's meeting.",
-        )
-
-    # 152. Meeting: send deck
-    if has('meeting') and has('deck', 'slide', 'presentation') and has('ပို့', 'send'):
-        return variants(
-            "Could you send me the meeting deck beforehand?",
-            "Could you please send me the meeting deck beforehand?",
-            "Can you send the meeting deck over before we meet?",
-            "Could you please forward the meeting deck in advance?",
-            "I would appreciate it if the meeting deck could be forwarded in advance of the meeting.",
-        )
-
-    # 153. Meeting: unable to join
-    if has('meeting') and has('join', 'ဝင်') and has('မရ', 'cannot', 'unable') and has('notes', 'မှတ်စု'):
-        return variants(
-            "I can't join today's meeting. Please send me the notes.",
-            "I'm sorry, but I won't be able to join today's meeting. Could you please send me the notes?",
-            "I can't make today's meeting — can you send me the notes?",
-            "I will be unable to attend today's meeting. Please forward the notes to me.",
-            "I regret that I will be unable to attend today's meeting. I would appreciate it if the notes could be forwarded to me.",
-        )
-
-    # 154. Meeting: post-meeting action
-    if has('meeting') and has('action item', 'action items') and has('ပြီး', 'after', 'following'):
-        return variants(
-            "After the meeting, I'll compile the action items and send them out.",
-            "After the meeting, I'll compile the action items and send them to you.",
-            "Once the meeting's done, I'll gather up the action items and send them over.",
-            "Following the meeting, I will consolidate the action items and distribute them accordingly.",
-            "Upon conclusion of the meeting, I will compile the action items and circulate them accordingly.",
-        )
-
-    # 155. Meeting: postpone
-    if has('meeting') and has('ရွှေ့', 'postpone', 'move') and has('မနက်ဖြန်', 'tomorrow'):
-        return variants(
-            "Could we move today's meeting to tomorrow?",
-            "Would it be possible to move today's meeting to tomorrow, please?",
-            "Can we push today's meeting to tomorrow?",
-            "Could we please reschedule today's meeting for tomorrow?",
-            "I would like to request that today's meeting be rescheduled for tomorrow.",
-        )
-
-    # 156. Project: scope change
-    if has('project') and has('scope') and has('ပြောင်း', 'change'):
-        return variants(
-            "The project scope has changed, so we need to re-plan the timeline.",
-            "The project scope has changed, so we'll need to re-plan the timeline.",
-            "The scope changed, so we've got to redo the timeline.",
-            "As the project scope has changed, the timeline will need to be revised.",
-            "Owing to a change in the project scope, it will be necessary to revise the timeline accordingly.",
-        )
-
-    # 157. Project: resource shortage
-    if has('project') and has('resource') and has('မလုံလောက်', 'shortage', 'insufficient'):
-        return variants(
-            "We don't have enough resources, so we can't finish the project on time.",
-            "We don't have sufficient resources, so we may not be able to finish the project on time.",
-            "We're short on resources, so finishing the project on time is going to be tough.",
-            "Due to insufficient resources, the project may not be completed within the required timeframe.",
-            "Owing to a shortage of resources, completion of the project within the stipulated timeframe may not be feasible.",
-        )
-
-    # 158. Project: dependency delay
-    if has('project', 'team') and has('depend', 'dependency', 'waiting') and has('နောက်ကျ', 'delay', 'delayed'):
-        return variants(
-            "We're waiting on another team, so our work is delayed.",
-            "We're dependent on another team, so our work is being delayed.",
-            "We're blocked by another team, so our work is running late.",
-            "Our work is delayed because we are awaiting deliverables from another team.",
-            "Our work has been delayed owing to our dependence on deliverables from another team.",
-        )
-
-    # 159. Project: testing phase
-    if has('project') and has('testing', 'test phase') and has('bug', 'defect', 'fix'):
-        return variants(
-            "The project is in the testing phase, and we're fixing bugs.",
-            "The project is currently in the testing phase, and we're fixing the bugs.",
-            "We're in testing mode now — squashing bugs.",
-            "The project has entered the testing phase, and the team is currently resolving outstanding defects.",
-            "The project has progressed to the testing phase, during which identified defects are being rectified.",
-        )
-
-    # 160. Project: deployment planned
-    if has('project') and has('deploy', 'deployment') and has('မနက်ဖြန်', 'tomorrow'):
-        return variants(
-            "We'll deploy the project tomorrow.",
-            "We plan to deploy the project tomorrow.",
-            "We're deploying the project tomorrow.",
-            "The project is scheduled for deployment tomorrow.",
-            "Deployment of the project is scheduled to take place tomorrow.",
-        )
-
-    # 161. Project: post-mortem
-    if has('project') and has('post-mortem', 'post mortem', 'retrospective') and has('meeting', 'ပြီး'):
-        return variants(
-            "After the project, we'll hold a post-mortem meeting.",
-            "Once the project is complete, we'll hold a post-mortem meeting.",
-            "After the project wraps, let's do a post-mortem.",
-            "Following project completion, a post-mortem meeting will be conducted.",
-            "Upon conclusion of the project, a post-mortem review meeting will be convened.",
-        )
-
-    # 162. Project: milestone reached
-    if has('project') and has('milestone') and has('ပြီး', 'completed', 'reached', 'done'):
-        return variants(
-            "We've successfully completed this project milestone.",
-            "I'm pleased to share that we've successfully completed this project milestone.",
-            "Great news — we've hit this project milestone!",
-            "This project milestone has been successfully completed.",
-            "This project milestone has been duly and successfully completed.",
-        )
-
-    # 163. Project: change request
-    if has('change request', 'change order') and has('impact', 'assess', 'review'):
-        return variants(
-            "We've received a change request, so we're assessing the impact.",
-            "We've received a change request, so we're currently assessing its impact.",
-            "A change request came in, so we're checking what it'll affect.",
-            "A change request has been received, and the impact is currently being assessed.",
-            "A change request has been received, and a formal impact assessment is presently underway.",
-        )
-
-    # 164. Project: risk identified
-    if has('project') and has('risk') and has('mitigation', 'plan', 'manage'):
-        return variants(
-            "We've identified a risk in the project, so we need a mitigation plan.",
-            "We've identified a risk in the project, so we'll need a mitigation plan.",
-            "We spotted a risk in the project, so we need a plan to handle it.",
-            "A project risk has been identified, and a mitigation plan is required.",
-            "A risk has been identified in the project, necessitating the formulation of a mitigation plan.",
-        )
-
-    # 165. Project: demo request
-    if has('project') and has('demo', 'demonstration') and has('client', 'schedule', 'date'):
-        return variants(
-            "We need to schedule a date to demo the project to the client.",
-            "We need to schedule a date to demo the project to the client, if that works for everyone.",
-            "Let's lock in a date to show the client the project demo.",
-            "A date must be scheduled for the project demonstration to the client.",
-            "It will be necessary to arrange a date for the formal demonstration of the project to the client.",
-        )
-
-    # 166. Project: documentation
-    if has('project') and has('documentation', 'document') and has('update', 'revise'):
-        return variants(
-            "I'm updating the project documentation.",
-            "I'm currently updating the project documentation.",
-            "I'm working on updating the project docs.",
-            "I am currently updating the project documentation.",
-            "I am presently engaged in the revision of the project documentation.",
-        )
-
-    # 167. Project: budget concern
-    if has('project') and has('budget') and has('ကျော်', 'over', 'exceed'):
-        return variants(
-            "The project might go over budget, so we need to review it.",
-            "The project may exceed its budget, so we'll need to review it.",
-            "The project could bust the budget, so we should review it.",
-            "There is a risk that the project will exceed its budget, and a review is therefore required.",
-            "As there is a possibility that the project may exceed its allocated budget, a review is required.",
-        )
-
-    # 168. Project: vendor delay
-    if has('vendor') and has('နောက်ကျ', 'delay', 'late') and has('project', 'delivery'):
-        return variants(
-            "The vendor said the materials will be late, so the project might be delayed.",
-            "The vendor has advised that the materials will be delayed, so the project may be delayed.",
-            "The vendor says the materials are coming late, so the project could slip.",
-            "The vendor has indicated that delivery of the materials will be delayed, which may delay the project.",
-            "The vendor has notified us of a delay in the delivery of materials, which may consequently delay the project.",
-        )
-
-    # 169. Project: sprint review
-    if has('sprint', 'review') and has('သောကြာ', 'friday', 'this week'):
-        return variants(
-            "We'll hold the sprint review this Friday.",
-            "We're planning to hold the sprint review this Friday.",
-            "Sprint review's happening this Friday.",
-            "The sprint review is scheduled for this Friday.",
-            "The sprint review has been scheduled for this coming Friday.",
-        )
-
-    # 170. Project: lessons learned
-    if has('project') and has('lessons learned', 'lessons learnt') and has('ရေး', 'write', 'document'):
-        return variants(
-            "After the project, I'll write up the lessons learned.",
-            "Once the project is done, I'll write up the lessons learned document.",
-            "After the project wraps, I'll jot down the lessons learned.",
-            "Following project completion, a lessons-learned document will be prepared.",
-            "Upon conclusion of the project, a formal lessons-learned document will be drafted.",
-        )
-
-    # 171. Client: meeting follow-up
-    if has('client') and has('meeting') and has('summary') and has('ပို့', 'send', 'email'):
-        return variants(
-            "After the client meeting, I'll send a summary by email.",
-            "After the client meeting, I'll send a summary via email.",
-            "Once we're done with the client meeting, I'll email a summary.",
-            "Following the client meeting, I will circulate a summary via email.",
-            "Subsequent to the client meeting, a summary will be circulated by electronic mail.",
-        )
-
-    # 172. Client: question clarification
-    if has('client') and has('မေး', 'question', 'asked') and has('ဖြေ', 'reply', 'respond'):
-        return variants(
-            "We need to reply to the question the client asked.",
-            "We need to respond to the question the client raised.",
-            "We need to get back to the client's question.",
-            "A response is required to the question raised by the client.",
-            "It is necessary to provide a formal response to the question raised by the client.",
-        )
-
-    # 173. Client: invoice query
-    if has('client') and has('invoice') and has('မေး', 'ask', 'query'):
-        return variants(
-            "The client asked about the invoice, so please reply to them.",
-            "The client has enquired about the invoice, so could you please reply to them?",
-            "The client's asking about the invoice — can you get back to them?",
-            "The client has raised a query regarding the invoice. Please respond accordingly.",
-            "The client has submitted an enquiry concerning the invoice. Kindly furnish an appropriate response.",
-        )
-
-    # 174. Client: proposal accepted
-    if has('client') and has('proposal') and has('လက်ခံ', 'accept', 'accepted'):
-        return variants(
-            "The client accepted the proposal, so we can move forward with the contract.",
-            "The client has accepted the proposal, so we can proceed with the contract.",
-            "The client said yes to the proposal — we can move on to the contract.",
-            "The client has accepted the proposal, and we may therefore proceed with the contract.",
-            "The client has accepted the proposal; accordingly, we may proceed with the contract.",
-        )
-
-    # 175. Client: positive feedback
-    if has('client') and has('feedback') and has('ကောင်း', 'good', 'positive'):
-        return variants(
-            "The client gave good feedback. Please tell the team.",
-            "The client gave positive feedback. Could you please share it with the team?",
-            "The client loved it — let the team know!",
-            "The client has provided positive feedback. Please communicate this to the team.",
-            "The client has furnished favourable feedback. Kindly convey this to the team.",
-        )
-
-    # 176. Client: quotation request
-    if has('client') and has('quotation', 'quote') and has('တောင်း', 'request', 'need'):
-        return variants(
-            "The client asked for a quotation, so we need to send it today.",
-            "The client has requested a quotation, so we should send it by the end of today.",
-            "The client wants a quote — we need to get it to them today.",
-            "The client has requested a quotation, which must be submitted by the end of today.",
-            "The client has requested a quotation, which must be furnished by the close of business today.",
-        )
-
-    # 177. Client: contract renewal
-    if has('client') and has('contract') and has('renewal', 'renew', 'expire'):
-        return variants(
-            "The client contract expires at the end of this month, so we need to prepare for renewal.",
-            "The client contract expires at the end of this month, so we'll need to prepare for its renewal.",
-            "The client contract runs out at month's end, so let's get ready to renew it.",
-            "The client contract expires at the end of this month, and preparations for renewal are required.",
-            "The client contract is due to expire at the end of the present month; preparations for its renewal are therefore required.",
-        )
-
-    # 178. Client: support ticket
-    if has('client') and has('support ticket', 'ticket') and has('ဖြေ', 'resolve', 'fix'):
-        return variants(
-            "The client opened a support ticket, so please resolve it as soon as possible.",
-            "The client has opened a support ticket. Could you please resolve it as soon as possible?",
-            "The client raised a support ticket — can you look into it ASAP?",
-            "The client has raised a support ticket. Please address it at the earliest opportunity.",
-            "The client has submitted a support ticket. Kindly attend to it with the utmost urgency.",
-        )
-
-    # 179. Client: payment follow-up
-    if has('client') and has('payment') and has('follow up', 'chase', 'outstanding'):
-        return variants(
-            "The client hasn't paid yet, so please follow up.",
-            "The client hasn't made the payment yet. Could you please follow up with them?",
-            "The client hasn't paid yet — can you chase them up?",
-            "Payment from the client remains outstanding. Please follow up accordingly.",
-            "The payment from the client remains outstanding. Kindly follow up on the matter.",
-        )
-
-    # 180. Client: NDA signing
-    if has('NDA', 'non-disclosure') and has('sign', 'လက်မှတ်', 'executed'):
-        return variants(
-            "Has the NDA been signed yet?",
-            "Could you please confirm whether the NDA has been signed?",
-            "Have they signed the NDA yet?",
-            "Could you please confirm whether the NDA has been executed?",
-            "I would appreciate confirmation as to whether the NDA has been duly executed.",
-        )
-
-    # 181. Client: product demo feedback
-    if has('client') and has('demo') and has('feedback'):
-        return variants(
-            "The client watched the product demo and gave feedback.",
-            "The client has viewed the product demo and provided feedback.",
-            "The client checked out the product demo and gave us feedback.",
-            "The client has reviewed the product demonstration and provided feedback.",
-            "The client has reviewed the product demonstration and furnished the relevant feedback.",
-        )
-
-    # 182. Client: project kickoff
-    if has('client') and has('kickoff', 'kick-off', 'kick off') and has('project'):
-        return variants(
-            "We'll hold the client project kickoff next week.",
-            "We're planning to hold the client project kickoff next week.",
-            "Client project kickoff is next week.",
-            "The client project kickoff is scheduled for next week.",
-            "The client project kickoff has been scheduled for the forthcoming week.",
-        )
-
-    # 183. Client: change order
-    if has('client') and has('change order', 'change request') and has('review', 'စစ်'):
-        return variants(
-            "The client sent a change order, so we're reviewing it.",
-            "The client has sent a change order, so we're currently reviewing it.",
-            "The client sent over a change order — we're looking at it now.",
-            "A change order has been received from the client and is currently under review.",
-            "A change order has been received from the client and is presently undergoing review.",
-        )
-
-    # 184. Client: escalation
-    if has('client') and has('escalate', 'escalation') and has('manager', 'အကြောင်းကြား'):
-        return variants(
-            "The client escalated an issue, so I've informed the manager.",
-            "The client has escalated an issue, so I've informed the manager accordingly.",
-            "The client escalated something, so I gave the manager a heads-up.",
-            "The client has escalated an issue, and the manager has been duly informed.",
-            "The client has escalated a matter, and the manager has been duly apprised of the situation.",
-        )
-
-    # 185. Client: satisfaction survey
-    if has('client') and has('satisfaction', 'survey') and has('response', 'wait'):
-        return variants(
-            "We sent the client satisfaction survey and are waiting for responses.",
-            "We've sent out the client satisfaction survey and are awaiting responses.",
-            "We sent the satisfaction survey and are waiting to hear back.",
-            "The client satisfaction survey has been distributed, and responses are currently pending.",
-            "The client satisfaction survey has been dispatched, and responses are presently awaited.",
-        )
-
-    # 186. Daily: late to meet friend
-    if has('သူငယ်ချင်း', 'friend') and has('ချိန်း', 'meet') and has('နောက်ကျ', 'late') and has('မိနစ်', 'minutes'):
-        return variants(
-            "I'll be about 15 minutes late to meet my friend.",
-            "I'm sorry, but I'll be about 15 minutes late to meet my friend.",
-            "I'm running about 15 minutes late to meet my friend.",
-            "I will be approximately 15 minutes late for my appointment with my friend.",
-            "I will be delayed by approximately 15 minutes for my scheduled meeting with my friend.",
-        )
-
-    # 187. Daily: forgot wallet
-    if has('wallet', 'ပိုက်ဆံအိတ်') and has('မေ့', 'forgot', 'left') and has('အိမ်', 'home'):
-        return variants(
-            "I forgot my wallet, so I need to go home and get it.",
-            "I'm sorry, but I forgot my wallet, so I need to go home and get it.",
-            "I left my wallet at home — I've got to run back and grab it.",
-            "I have left my wallet at home and need to return to retrieve it.",
-            "As I have inadvertently left my wallet at home, I must return to retrieve it.",
-        )
-
-    # 188. Daily: waiting for delivery
-    if has('delivery') and has('ရောက်', 'arrive') and has('မ', 'not yet', 'yet'):
-        return variants(
-            "The delivery was supposed to arrive today, but it hasn't come yet.",
-            "The delivery was expected today, but it hasn't arrived yet.",
-            "The delivery was supposed to come today, but it's still not here.",
-            "The delivery was scheduled for today; however, it has not yet arrived.",
-            "The delivery was scheduled to arrive today; however, it has not yet been received.",
-        )
-
-    # 189. Daily: power cut at home
-    if has('အိမ်', 'home') and has('မီးပြတ်', 'power cut', 'power outage') and has('charge', 'အားသွင်း'):
-        return variants(
-            "The power is out at home, so I can't charge my phone right now.",
-            "I'm sorry, but the power is out at home, so I can't charge my phone right now.",
-            "We've got a power cut at home, so my phone's dead and I can't charge it.",
-            "Due to a power outage at home, I am currently unable to charge my phone.",
-            "Owing to a power interruption at my residence, I am presently unable to charge my telephone.",
-        )
-
-    # 190. Daily: slow internet at home
-    if has('အိမ်', 'home') and has('internet') and has('နှေး', 'slow') and has('video call', 'call'):
-        return variants(
-            "The internet at home is very slow, so I can't make a video call.",
-            "I'm sorry, but the internet at home is very slow, so I can't make a video call.",
-            "My home internet is super slow, so I can't do a video call.",
-            "Due to a slow internet connection at home, I am unable to conduct a video call.",
-            "Owing to the significantly reduced internet speed at my residence, I am unable to participate in a video call.",
-        )
-
-    # 191. Daily: lost phone
-    if has('ဖုန်း', 'phone') and has('ပျောက်', 'lost', 'missing') and has('ရှာ', 'looking', 'search'):
-        return variants(
-            "I lost my phone, so I'm looking for it now.",
-            "I'm sorry, but I've lost my phone and am currently looking for it.",
-            "I've lost my phone — I'm hunting for it right now.",
-            "I have misplaced my phone and am currently searching for it.",
-            "I have misplaced my telephone and am presently engaged in searching for it.",
-        )
-
-    # 192. Daily: forgot appointment
-    if has('appointment') and has('မေ့', 'forgot', 'overlooked') and has('တောင်းပန်', 'sorry', 'apolog'):
-        return variants(
-            "I forgot about the appointment. Please forgive me.",
-            "I'm sorry, I completely forgot about the appointment. Please accept my apologies.",
-            "I completely forgot about the appointment — so sorry!",
-            "I overlooked the appointment entirely. I sincerely apologize.",
-            "I regret that I overlooked the appointment. Please accept my sincere apologies.",
-        )
-
-    # 193. Daily: sick and resting
-    if has('နေမကောင်း', 'sick', 'unwell') and has('အိမ်', 'home') and has('နား', 'rest'):
-        return variants(
-            "I'm not feeling well, so I'll rest at home today.",
-            "I'm not feeling well, so I'll be resting at home today.",
-            "I'm feeling sick, so I'm just going to chill at home today.",
-            "As I am unwell, I will be resting at home today.",
-            "Owing to illness, I will remain at home today to rest.",
-        )
-
-    # 194. Daily: family gathering
-    if has('မိသားစု', 'family') and has('စုဝေး', 'gathering', 'get-together') and has('နေ့', 'day', 'sunday'):
-        return variants(
-            "We have a family gathering this Sunday.",
-            "We have a family gathering this Sunday, so I'll be attending that.",
-            "We've got a family get-together this Sunday.",
-            "A family gathering is scheduled for this Sunday.",
-            "A family gathering has been scheduled for this coming Sunday.",
-        )
-
-    # 195. Daily: helping friend move
-    if has('သူငယ်ချင်း', 'friend') and has('အိမ်ရွှေ့', 'move') and has('ကူညီ', 'help'):
-        return variants(
-            "I'm helping my friend move, so I'm not free today.",
-            "I'm helping my friend move today, so I'm afraid I'm not free.",
-            "I'm helping a friend move today, so I'm pretty tied up.",
-            "I am assisting a friend with a move today and am therefore unavailable.",
-            "As I am assisting a friend with relocation today, I am unavailable.",
-        )
-
-    # 196. Daily: forgot to reply
-    if has('message') and has('မေ့', 'forgot') and has('reply', 'ပြန်') and has('တောင်းပန်', 'sorry'):
-        return variants(
-            "I forgot to reply to your message. I'm sorry.",
-            "I'm sorry, I forgot to reply to your message. Please accept my apologies.",
-            "Sorry I didn't reply — I totally forgot about your message.",
-            "I overlooked replying to your message. I apologize for the delay.",
-            "I regret that I failed to reply to your message. Please accept my sincere apologies.",
-        )
-
-    # 197. Daily: late for dinner
-    if has('ညစာ', 'dinner') and has('နောက်ကျ', 'late') and has('အလုပ်', 'work', 'busy'):
-        return variants(
-            "I'll be late for dinner today because I have a lot of work.",
-            "I'm sorry, but I'll be a little late for dinner today because I have a lot of work.",
-            "I'm swamped with work, so I'll be late for dinner tonight.",
-            "Due to a heavy workload, I will be late for dinner this evening.",
-            "Owing to an extensive workload, I will be delayed in arriving for dinner this evening.",
-        )
-
-    # 198. Daily: car won't start
-    if has('ကား', 'car') and has('မနှိုး', 'not start', 'won\'t start') and has('mechanic', 'ပြင်ဆရာ'):
-        return variants(
-            "My car won't start, so I need to call a mechanic.",
-            "My car won't start, so I'll need to call a mechanic.",
-            "My car won't start — I've got to call a mechanic.",
-            "My vehicle will not start, and I therefore need to contact a mechanic.",
-            "As my vehicle will not start, it will be necessary to summon a mechanic.",
-        )
-
-    # 199. Daily: keys locked inside
-    if has('သော့', 'key') and has('မေ့', 'locked inside', 'left inside') and has('အိမ်', 'house'):
-        return variants(
-            "I locked my keys inside, so I can't get into the house.",
-            "I'm sorry, but I locked my keys inside, so I can't get into the house.",
-            "I locked my keys inside — I'm stuck outside the house.",
-            "I have locked my keys inside and am therefore unable to enter the house.",
-            "As I have inadvertently locked my keys inside the premises, I am presently unable to gain entry.",
-        )
-
-    # 200. Daily: catching up later
-    if has('မအား', 'busy', 'unavailable') and has('နောက်မှ', 'later') and has('ဆက်သွယ်', 'get back', 'catch up'):
-        return variants(
-            "I'm not free right now, so I'll get back to you later.",
-            "I'm sorry, but I'm not free right now. I'll get back to you later.",
-            "I'm a bit tied up right now — I'll catch up with you later.",
-            "I am currently unavailable and will follow up with you at a later time.",
-            "As I am presently unavailable, I will contact you again at a later time.",
-        )
-    
     return None
 
 def contextual_rule_translation(text: str, tone: str):
